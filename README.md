@@ -44,6 +44,8 @@ result = compute_sentinel2_median_serverless(
 
 📖 **See [TWO_APPROACHES.md](TWO_APPROACHES.md) for detailed comparison and usage guide**
 
+⚙️ **See [SERVERLESS_LIMITS.md](SERVERLESS_LIMITS.md) for serverless compute quotas, limits, and best practices**
+
 ## Features
 
 - **Multi-sensor support**: Sentinel-2, Landsat, and ASTER

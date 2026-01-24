@@ -50,6 +50,15 @@ class ServerlessMedianComputer:
         """
         Compute temporal median composite using serverless batch processing.
 
+        Submits a job to EarthOne's serverless compute infrastructure with
+        configurable resources. 
+        
+        PLATFORM LIMITS:
+        - Maximum 1,000 concurrent jobs per user (platform-wide)
+        - Function-specific concurrency limit: 10 (set in Function creation)
+        - Compute seconds quota: varies by account (monthly reset)
+        - See SERVERLESS_LIMITS.md for detailed quota information
+
         Args:
             sensor: Sensor type ('sentinel2', 'landsat', or 'aster')
             bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
@@ -58,12 +67,22 @@ class ServerlessMedianComputer:
             bands: List of band names to include
             resolution: Output resolution in meters
             crs: Output CRS
-            cpus: CPU allocation for the compute job (default: 1.0)
-            memory: Memory allocation in MB (default: 2048)
+            cpus: CPU allocation for the compute job (default: 1.0, range: 0.25-8+)
+            memory: Memory allocation in MB (default: 2048, range: 512-32768+)
             **kwargs: Additional parameters
 
         Returns:
-            Dictionary containing job information and results
+            Dictionary containing job information and results with keys:
+            - job_id: Unique job identifier
+            - status: Job completion status
+            - function_name: Name of the compute function
+            - result: Computation results
+            - logs: Job execution logs
+        
+        Raises:
+            ValueError: If sensor is unknown or bands are invalid
+            ImportError: If required packages are not installed
+            Exception: If rate limit exceeded or job submission fails
         """
         if sensor not in SENSOR_CONFIGS:
             raise ValueError(

@@ -75,6 +75,7 @@ print(f"Result: {result['result']}")
 - **Configurable** - Control CPU, memory allocation
 - **Batch processing** - Process multiple jobs in parallel
 - **Production-ready** - Reliable, logged, monitored
+- **Platform limits** - Max 1,000 concurrent jobs per user (see [SERVERLESS_LIMITS.md](SERVERLESS_LIMITS.md))
 
 ## Comparison Table
 

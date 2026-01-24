@@ -37,20 +37,20 @@ ASTER_BANDS = {
     "B09": {"name": "SWIR 6", "resolution": 30, "wavelength": "2360-2430 nm", "subsystem": "SWIR"},
 }
 
-# Sensor configurations
+# Sensor configurations for EarthOne Platform
 SENSOR_CONFIGS = {
     "sentinel2": {
-        "collection": "sentinel-2-l2a",
+        "collection": "earthdaily:sentinel-2-l2a",
         "bands": SENTINEL2_BANDS,
         "default_resolution": 10,
     },
     "landsat": {
-        "collection": "landsat-c2l2",
+        "collection": "earthdaily:landsat-8-c2-l2",
         "bands": LANDSAT_BANDS,
         "default_resolution": 30,
     },
     "aster": {
-        "collection": "aster-l1t",
+        "collection": "earthdaily:aster-l1t",
         "bands": ASTER_BANDS,
         "default_resolution": 15,
     },

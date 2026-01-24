@@ -86,7 +86,7 @@ def main():
     
     parser.add_argument(
         "--api-key",
-        help="EarthDaily API key. If not specified, uses EARTHDAILY_API_KEY environment variable."
+        help="EarthOne API credentials. If not specified, uses EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET environment variables, or interactive login."
     )
     
     parser.add_argument(

@@ -1,6 +1,8 @@
 # earthone-medians
 
-Build temporal median composites for Sentinel-2, Landsat, and ASTER satellite imagery using the EarthOne EarthDaily API serverless compute capability.
+Build temporal median composites for Sentinel-2, Landsat, and ASTER satellite imagery using the **EarthOne Platform** by EarthDaily with its serverless compute capability.
+
+This package uses the official [earthdaily-earthone](https://github.com/earthdaily/earthone-python) Python client to access the EarthOne Platform.
 
 ## Features
 
@@ -10,7 +12,7 @@ Build temporal median composites for Sentinel-2, Landsat, and ASTER satellite im
   - Custom resolution
   - Custom CRS (coordinate reference system)
   - Start and end dates for time series
-- **Serverless compute**: Leverages EarthOne EarthDaily API for efficient processing
+- **Serverless compute**: Leverages EarthOne Platform's Compute API and Mosaic functions
 - **Simple API**: Easy-to-use Python functions and CLI interface
 
 ## Installation
@@ -23,6 +25,24 @@ Or install dependencies directly:
 
 ```bash
 pip install -r requirements.txt
+```
+
+**Note:** You must be a registered customer with access to the EarthOne Platform. Visit [https://earthdaily.com/earthone](https://earthdaily.com/earthone) to request access.
+
+## Authentication
+
+Before using this package, authenticate with the EarthOne Platform:
+
+```bash
+# Interactive login
+earthone auth login
+```
+
+Or set environment variables:
+
+```bash
+export EARTHONE_CLIENT_ID="your-client-id"
+export EARTHONE_CLIENT_SECRET="your-client-secret"
 ```
 
 ## Quick Start
@@ -189,20 +209,27 @@ earthone-medians aster --list-bands
 
 ## Authentication
 
-Set your EarthDaily API key as an environment variable:
+Set your EarthOne credentials as environment variables:
 
 ```bash
-export EARTHDAILY_API_KEY="your-api-key-here"
+export EARTHONE_CLIENT_ID="your-client-id"
+export EARTHONE_CLIENT_SECRET="your-client-secret"
 ```
 
-Or pass it directly:
+Or use interactive login:
+
+```bash
+earthone auth login
+```
+
+Then use the package without needing to pass credentials:
 
 ```python
-result = compute_sentinel2_median(..., api_key="your-api-key-here")
+result = compute_sentinel2_median(...)  # Uses authenticated session
 ```
 
 ```bash
-earthone-medians sentinel2 --api-key "your-api-key-here" ...
+earthone-medians sentinel2 ...  # Uses authenticated session
 ```
 
 ## Configuration
@@ -217,12 +244,13 @@ You can customize these or use them as references for your analysis.
 
 ## Requirements
 
-- Python >= 3.8
-- earthdaily >= 0.0.1
-- numpy >= 1.20.0
+- Python >= 3.10
+- earthdaily-earthone >= 5.0.0
+- earthdaily-earthone-dynamic-compute >= 0.1.0
+- numpy >= 2.0.0
 - pandas >= 1.3.0
-- rasterio >= 1.2.0
 - geopandas >= 0.10.0
+- Access to EarthOne Platform (register at https://earthdaily.com/earthone)
 
 ## License
 

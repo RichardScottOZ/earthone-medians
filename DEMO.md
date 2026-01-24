@@ -1,11 +1,27 @@
 # EarthOne Medians - Feature Demonstration
 
-This document demonstrates all the key features of the earthone-medians package.
+This document demonstrates all the key features of the earthone-medians package using the **EarthOne Platform** by EarthDaily.
+
+## Prerequisites
+
+1. Register for EarthOne Platform access at https://earthdaily.com/earthone
+2. Authenticate using `earthone auth login` or set environment variables
 
 ## Installation
 
 ```bash
 pip install -e .
+```
+
+## Authentication
+
+```bash
+# Interactive login (recommended)
+earthone auth login
+
+# Or set environment variables
+export EARTHONE_CLIENT_ID="your-client-id"
+export EARTHONE_CLIENT_SECRET="your-client-secret"
 ```
 
 ## Feature 1: Multi-Sensor Support
@@ -120,15 +136,15 @@ earthone-medians sentinel2 \
     --bands "B8,B4,B3"
 ```
 
-## Feature 7: EarthDaily API Integration
+## Feature 7: EarthOne Platform Integration
 
-The package uses the EarthDaily API's serverless compute capability:
+The package uses the EarthOne Platform's serverless Compute API and Mosaic functions:
 
 ```python
 from earthone_medians import MedianComputer
 
-# Initialize with API key
-computer = MedianComputer(api_key="your-api-key")
+# Initialize (uses authenticated EarthOne session)
+computer = MedianComputer()
 
 # Compute median using serverless compute
 result = computer.compute_median(
@@ -139,10 +155,19 @@ result = computer.compute_median(
 )
 ```
 
-Or set environment variable:
+The computation happens on EarthOne's infrastructure:
+- Searches the EarthOne Catalog for matching imagery
+- Creates a Mosaic with median function
+- Returns the computed result
+
+Authentication is handled via:
 ```bash
-export EARTHDAILY_API_KEY="your-api-key"
-earthone-medians sentinel2 --bbox "..." --start-date "..." --end-date "..."
+# Method 1: Interactive login
+earthone auth login
+
+# Method 2: Environment variables
+export EARTHONE_CLIENT_ID="your-client-id"
+export EARTHONE_CLIENT_SECRET="your-client-secret"
 ```
 
 ## Complete Examples

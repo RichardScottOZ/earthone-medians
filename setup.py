@@ -19,12 +19,12 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=[
-        "earthdaily>=0.0.1",
-        "numpy>=1.20.0",
+        "earthdaily-earthone>=5.0.0",
+        "earthdaily-earthone-dynamic-compute>=0.1.0",
+        "numpy>=2.0.0",
         "pandas>=1.3.0",
-        "rasterio>=1.2.0",
         "geopandas>=0.10.0",
     ],
     entry_points={

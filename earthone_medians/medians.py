@@ -17,25 +17,27 @@ class MedianComputer:
         Initialize the MedianComputer.
 
         Args:
-            api_key: EarthDaily API key. If not provided, will look for
-                    EARTHDAILY_API_KEY environment variable.
+            api_key: Optional API key parameter (deprecated). 
+                    EarthOne authentication uses EARTHONE_CLIENT_ID and 
+                    EARTHONE_CLIENT_SECRET environment variables, or 
+                    interactive login via `earthone auth login`.
         """
         self.api_key = api_key
         self._earthdaily = None
 
     def _get_earthdaily_client(self):
-        """Lazy initialization of EarthDaily client."""
+        """Lazy initialization of EarthDaily EarthOne client."""
         if self._earthdaily is None:
             try:
-                import earthdaily
-                if self.api_key:
-                    self._earthdaily = earthdaily.EarthDaily(api_key=self.api_key)
-                else:
-                    # Will use environment variable EARTHDAILY_API_KEY
-                    self._earthdaily = earthdaily.EarthDaily()
+                from earthdaily.earthone import Auth
+                # Auth will use EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET
+                # environment variables, or interactive login if not set
+                auth = Auth()
+                self._earthdaily = auth
             except ImportError:
                 raise ImportError(
-                    "earthdaily package is required. Install with: pip install earthdaily"
+                    "earthdaily-earthone package is required. "
+                    "Install with: pip install earthdaily-earthone[complete]"
                 )
         return self._earthdaily
 
@@ -126,48 +128,103 @@ class MedianComputer:
         self, client, query_params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Execute the median computation using EarthDaily serverless compute.
+        Execute the median computation using EarthOne serverless compute.
 
         Args:
-            client: EarthDaily client instance
+            client: EarthOne Auth client instance
             query_params: Query parameters for the API
 
         Returns:
             Result dictionary with computed median and metadata
         """
-        # This is a placeholder for the actual EarthDaily API call
-        # The actual implementation depends on the earthdaily library API
-        
-        # Example pseudo-code for what the API call might look like:
-        # result = client.compute.median(
-        #     collection=query_params["collection"],
-        #     bbox=query_params["bbox"],
-        #     datetime=query_params["datetime"],
-        #     bands=query_params["bands"],
-        #     resolution=query_params["resolution"],
-        #     crs=query_params["crs"]
-        # )
-        
-        logger.info("Executing median computation via EarthDaily serverless compute...")
-        
-        # For now, return a structured result that shows what would be computed
-        result = {
-            "status": "success",
-            "sensor": "determined from collection",
-            "collection": query_params["collection"],
-            "bands": query_params["bands"],
-            "bbox": query_params["bbox"],
-            "datetime": query_params["datetime"],
-            "resolution": query_params["resolution"],
-            "crs": query_params["crs"],
-            "output": "median_composite_data",
-            "metadata": {
-                "computed_at": datetime.utcnow().isoformat(),
-                "num_scenes": "to_be_determined",
+        try:
+            from earthdaily.earthone.catalog import search
+            from earthdaily.earthone.dynamic_compute import Mosaic
+            from shapely.geometry import box
+            
+            logger.info("Executing median computation via EarthOne serverless compute...")
+            
+            # Create bbox geometry
+            bbox_geom = box(*query_params["bbox"])
+            
+            # Parse datetime range
+            start_date, end_date = query_params["datetime"].split("/")
+            
+            # Search catalog for imagery
+            logger.info(f"Searching catalog for {query_params['collection']}...")
+            search_results = search(
+                product_id=query_params["collection"],
+                geometry=bbox_geom,
+                start_datetime=start_date,
+                end_datetime=end_date,
+            )
+            
+            num_scenes = len(list(search_results))
+            logger.info(f"Found {num_scenes} scenes")
+            
+            # Create mosaic with median function
+            logger.info("Creating median mosaic...")
+            band_str = " ".join(query_params["bands"])
+            
+            mosaic = Mosaic.from_product_bands(
+                query_params["collection"],
+                band_str,
+                start_datetime=start_date,
+                end_datetime=end_date,
+                geometry=bbox_geom,
+                function="median",
+                resolution=query_params["resolution"],
+            )
+            
+            logger.info("Median mosaic created successfully")
+            
+            result = {
+                "status": "success",
+                "sensor": query_params["collection"],
+                "collection": query_params["collection"],
+                "bands": query_params["bands"],
+                "bbox": query_params["bbox"],
+                "datetime": query_params["datetime"],
+                "resolution": query_params["resolution"],
+                "crs": query_params["crs"],
+                "mosaic": mosaic,
+                "metadata": {
+                    "computed_at": datetime.utcnow().isoformat(),
+                    "num_scenes": num_scenes,
+                    "method": "median",
+                    "platform": "EarthOne",
+                }
             }
-        }
-        
-        return result
+            
+            return result
+            
+        except ImportError as e:
+            logger.error(f"Missing required EarthOne package: {e}")
+            raise ImportError(
+                "earthdaily-earthone-dynamic-compute package is required. "
+                "Install with: pip install earthdaily-earthone-dynamic-compute"
+            )
+        except Exception as e:
+            logger.error(f"Error during median computation: {e}")
+            # Return placeholder result for demonstration/testing
+            result = {
+                "status": "error",
+                "error": str(e),
+                "sensor": "determined from collection",
+                "collection": query_params["collection"],
+                "bands": query_params["bands"],
+                "bbox": query_params["bbox"],
+                "datetime": query_params["datetime"],
+                "resolution": query_params["resolution"],
+                "crs": query_params["crs"],
+                "output": "median_composite_data",
+                "metadata": {
+                    "computed_at": datetime.utcnow().isoformat(),
+                    "num_scenes": "to_be_determined",
+                    "note": "Install earthdaily-earthone[complete] for full functionality",
+                }
+            }
+            return result
 
 
 def compute_sentinel2_median(
@@ -191,7 +248,7 @@ def compute_sentinel2_median(
               If None, uses all science bands (excludes coastal aerosol)
         resolution: Output resolution in meters (default: 10m)
         crs: Output CRS (default: EPSG:4326)
-        api_key: EarthDaily API key
+        api_key: Deprecated - use EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET env vars
         **kwargs: Additional parameters
 
     Returns:
@@ -231,7 +288,7 @@ def compute_landsat_median(
               If None, uses all science bands (excludes coastal aerosol)
         resolution: Output resolution in meters (default: 30m)
         crs: Output CRS (default: EPSG:4326)
-        api_key: EarthDaily API key
+        api_key: Deprecated - use EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET env vars
         **kwargs: Additional parameters
 
     Returns:
@@ -271,7 +328,7 @@ def compute_aster_median(
               If None, uses all science bands
         resolution: Output resolution in meters (default: 15m)
         crs: Output CRS (default: EPSG:4326)
-        api_key: EarthDaily API key
+        api_key: Deprecated - use EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET env vars
         **kwargs: Additional parameters
 
     Returns:

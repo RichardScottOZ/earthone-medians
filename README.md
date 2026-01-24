@@ -4,6 +4,46 @@ Build temporal median composites for Sentinel-2, Landsat, and ASTER satellite im
 
 This package uses the official [earthdaily-earthone](https://github.com/earthdaily/earthone-python) Python client to access the EarthOne Platform.
 
+## Two Approaches Available
+
+This package provides **TWO** distinct approaches for computing medians:
+
+### 1. 🚀 Workbench/Interactive (Dynamic Compute)
+**Best for:** Interactive analysis, Jupyter notebooks, visualization  
+**Uses:** `earthdaily.earthone.dynamic_compute.Mosaic`
+
+```python
+from earthone_medians import compute_sentinel2_median_workbench
+
+result = compute_sentinel2_median_workbench(
+    bbox=[115.0, -32.0, 116.0, -31.0],
+    start_date="2023-01-01",
+    end_date="2023-12-31",
+    bands=["B2", "B3", "B4", "B8"],
+)
+# Returns Mosaic object for immediate visualization
+```
+
+### 2. ⚡ Serverless Compute (Batch Processing)
+**Best for:** Production workflows, large-scale batch processing  
+**Uses:** `earthdaily.earthone.compute.Function`
+
+```python
+from earthone_medians import compute_sentinel2_median_serverless
+
+result = compute_sentinel2_median_serverless(
+    bbox=[115.0, -32.0, 116.0, -31.0],
+    start_date="2023-01-01",
+    end_date="2023-12-31",
+    bands=["B2", "B3", "B4", "B8"],
+    cpus=2.0,  # Configure resources
+    memory=4096,
+)
+# Submits batch job to EarthOne compute infrastructure
+```
+
+📖 **See [TWO_APPROACHES.md](TWO_APPROACHES.md) for detailed comparison and usage guide**
+
 ## Features
 
 - **Multi-sensor support**: Sentinel-2, Landsat, and ASTER
@@ -49,10 +89,11 @@ export EARTHONE_CLIENT_SECRET="your-client-secret"
 
 ### Python API
 
+#### Workbench/Interactive (Default)
 ```python
 from earthone_medians import compute_sentinel2_median
 
-# Compute Sentinel-2 median for a region
+# Uses workbench approach by default (fast, interactive)
 result = compute_sentinel2_median(
     bbox=[115.0, -32.0, 116.0, -31.0],  # [min_lon, min_lat, max_lon, max_lat]
     start_date="2023-01-01",
@@ -60,14 +101,28 @@ result = compute_sentinel2_median(
     bands=["B2", "B3", "B4", "B8"],  # Blue, Green, Red, NIR
     resolution=10,  # 10m resolution
     crs="EPSG:4326",
-    api_key="your-api-key-here"
+)
+```
+
+#### Serverless Compute (Production)
+```python
+from earthone_medians import compute_sentinel2_median_serverless
+
+# Uses serverless batch processing (scalable, production)
+result = compute_sentinel2_median_serverless(
+    bbox=[115.0, -32.0, 116.0, -31.0],
+    start_date="2023-01-01",
+    end_date="2023-12-31",
+    bands=["B2", "B3", "B4", "B8"],
+    cpus=2.0,
+    memory=4096,
 )
 ```
 
 ### Command Line Interface
 
 ```bash
-# Compute Sentinel-2 median
+# Workbench approach (default, fast for exploration)
 earthone-medians sentinel2 \
     --bbox "115.0,-32.0,116.0,-31.0" \
     --start-date "2023-01-01" \
@@ -76,6 +131,15 @@ earthone-medians sentinel2 \
     --resolution 10 \
     --crs "EPSG:4326" \
     --output result.json
+
+# Serverless compute (for production batch processing)
+earthone-medians sentinel2 \
+    --bbox "115.0,-32.0,116.0,-31.0" \
+    --start-date "2023-01-01" \
+    --end-date "2023-12-31" \
+    --method serverless \
+    --cpus 2.0 \
+    --memory 4096
 
 # List available bands for a sensor
 earthone-medians sentinel2 --list-bands

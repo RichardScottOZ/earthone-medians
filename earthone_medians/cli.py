@@ -55,19 +55,16 @@ def main():
     
     parser.add_argument(
         "--bbox",
-        required=True,
         help="Bounding box as: min_lon,min_lat,max_lon,max_lat"
     )
     
     parser.add_argument(
         "--start-date",
-        required=True,
         help="Start date in ISO format (YYYY-MM-DD)"
     )
     
     parser.add_argument(
         "--end-date",
-        required=True,
         help="End date in ISO format (YYYY-MM-DD)"
     )
     
@@ -131,6 +128,12 @@ def main():
                   f"Wavelength: {band_info['wavelength']})")
         print()
         return 0
+    
+    # Validate required arguments for computation
+    if not args.bbox or not args.start_date or not args.end_date:
+        print("Error: --bbox, --start-date, and --end-date are required for median computation", file=sys.stderr)
+        parser.print_help()
+        return 1
     
     # Parse arguments
     try:

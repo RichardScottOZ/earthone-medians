@@ -13,6 +13,7 @@ from .medians import (
     compute_landsat_median,
     compute_aster_median,
     compute_median,
+    MedianComputer,
 )
 from .config import (
     SENTINEL2_BANDS,
@@ -25,6 +26,7 @@ __all__ = [
     "compute_landsat_median",
     "compute_aster_median",
     "compute_median",
+    "MedianComputer",
     "SENTINEL2_BANDS",
     "LANDSAT_BANDS",
     "ASTER_BANDS",

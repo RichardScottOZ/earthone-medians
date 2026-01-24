@@ -11,6 +11,16 @@ from .medians import (
     compute_landsat_median,
     compute_aster_median,
 )
+from .serverless import (
+    compute_sentinel2_median_serverless,
+    compute_landsat_median_serverless,
+    compute_aster_median_serverless,
+)
+from .workbench import (
+    compute_sentinel2_median_workbench,
+    compute_landsat_median_workbench,
+    compute_aster_median_workbench,
+)
 from .config import SENTINEL2_BANDS, LANDSAT_BANDS, ASTER_BANDS
 
 
@@ -51,6 +61,27 @@ def main():
         "sensor",
         choices=["sentinel2", "landsat", "aster"],
         help="Satellite sensor to use"
+    )
+    
+    parser.add_argument(
+        "--method",
+        choices=["workbench", "serverless"],
+        default="workbench",
+        help="Computation method: 'workbench' for interactive/notebook use, 'serverless' for batch processing (default: workbench)"
+    )
+    
+    parser.add_argument(
+        "--cpus",
+        type=float,
+        default=1.0,
+        help="CPU allocation for serverless compute (default: 1.0). Only used with --method serverless."
+    )
+    
+    parser.add_argument(
+        "--memory",
+        type=int,
+        default=2048,
+        help="Memory allocation in MB for serverless compute (default: 2048). Only used with --method serverless."
     )
     
     parser.add_argument(
@@ -143,26 +174,48 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         return 1
     
-    # Select computation function based on sensor
-    compute_functions = {
-        "sentinel2": compute_sentinel2_median,
-        "landsat": compute_landsat_median,
-        "aster": compute_aster_median,
-    }
+    # Select computation function based on sensor and method
+    if args.method == "serverless":
+        compute_functions = {
+            "sentinel2": compute_sentinel2_median_serverless,
+            "landsat": compute_landsat_median_serverless,
+            "aster": compute_aster_median_serverless,
+        }
+    else:  # workbench
+        compute_functions = {
+            "sentinel2": compute_sentinel2_median_workbench,
+            "landsat": compute_landsat_median_workbench,
+            "aster": compute_aster_median_workbench,
+        }
     
     compute_fn = compute_functions[args.sensor]
     
     # Compute median
     try:
-        result = compute_fn(
-            bbox=bbox,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            bands=bands,
-            resolution=args.resolution,
-            crs=args.crs,
-            api_key=args.api_key,
-        )
+        logging.info(f"Using {args.method} method for computation")
+        
+        if args.method == "serverless":
+            result = compute_fn(
+                bbox=bbox,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                bands=bands,
+                resolution=args.resolution,
+                crs=args.crs,
+                api_key=args.api_key,
+                cpus=args.cpus,
+                memory=args.memory,
+            )
+        else:  # workbench
+            result = compute_fn(
+                bbox=bbox,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                bands=bands,
+                resolution=args.resolution,
+                crs=args.crs,
+                api_key=args.api_key,
+            )
         
         # Format output
         output_json = json.dumps(result, indent=2)

@@ -21,7 +21,7 @@ from .workbench import (
     compute_landsat_median_workbench,
     compute_aster_median_workbench,
 )
-from .config import SENTINEL2_BANDS, LANDSAT_BANDS, ASTER_BANDS
+from .config import SENTINEL2_BANDS, LANDSAT_BANDS, ASTER_BANDS, DEFAULT_MAX_CLOUD_COVER
 
 
 def setup_logging(verbose: bool = False):
@@ -116,6 +116,12 @@ def main():
     )
     
     parser.add_argument(
+        "--max-cloud-cover",
+        type=float,
+        help=f"Maximum cloud cover percentage (0-100). Filters imagery to only include scenes with cloud cover <= this threshold. Default: {DEFAULT_MAX_CLOUD_COVER} percent"
+    )
+    
+    parser.add_argument(
         "--api-key",
         help="EarthOne API credentials. If not specified, uses EARTHONE_CLIENT_ID and EARTHONE_CLIENT_SECRET environment variables, or interactive login."
     )
@@ -205,6 +211,7 @@ def main():
                 api_key=args.api_key,
                 cpus=args.cpus,
                 memory=args.memory,
+                max_cloud_cover=args.max_cloud_cover,
             )
         else:  # workbench
             result = compute_fn(
@@ -215,6 +222,7 @@ def main():
                 resolution=args.resolution,
                 crs=args.crs,
                 api_key=args.api_key,
+                max_cloud_cover=args.max_cloud_cover,
             )
         
         # Format output

@@ -58,3 +58,13 @@ SENSOR_CONFIGS = {
 
 # Default CRS
 DEFAULT_CRS = "EPSG:4326"
+
+# Default cloud cover threshold (percentage)
+DEFAULT_MAX_CLOUD_COVER = 20  # 20% maximum cloud cover
+
+# Cloud cover property names for each sensor
+CLOUD_COVER_PROPERTIES = {
+    "sentinel2": "eo:cloud_cover",  # STAC property for Sentinel-2
+    "landsat": "eo:cloud_cover",    # STAC property for Landsat
+    "aster": "eo:cloud_cover",      # STAC property for ASTER
+}

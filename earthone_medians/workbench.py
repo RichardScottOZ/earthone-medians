@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
 
-from .config import SENSOR_CONFIGS, DEFAULT_CRS
+from .config import SENSOR_CONFIGS, DEFAULT_CRS, DEFAULT_MAX_CLOUD_COVER, CLOUD_COVER_PROPERTIES
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ class WorkbenchMedianComputer:
         bands: Optional[List[str]] = None,
         resolution: Optional[int] = None,
         crs: Optional[str] = None,
+        max_cloud_cover: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -68,6 +69,9 @@ class WorkbenchMedianComputer:
             bands: List of band names to include. If None, uses all available bands.
             resolution: Output resolution in meters. If None, uses sensor default.
             crs: Output CRS (e.g., 'EPSG:4326'). If None, uses default.
+            max_cloud_cover: Maximum cloud cover percentage (0-100). Default: 20%.
+                           Filters imagery to only include scenes with cloud cover
+                           less than or equal to this threshold.
             **kwargs: Additional parameters to pass to EarthDaily API
 
         Returns:
@@ -99,12 +103,16 @@ class WorkbenchMedianComputer:
         
         if crs is None:
             crs = DEFAULT_CRS
+        
+        if max_cloud_cover is None:
+            max_cloud_cover = DEFAULT_MAX_CLOUD_COVER
 
         logger.info(
             f"Computing median for {sensor} from {start_date} to {end_date}"
         )
         logger.info(f"Bands: {bands}")
         logger.info(f"Resolution: {resolution}m, CRS: {crs}")
+        logger.info(f"Max cloud cover: {max_cloud_cover}%")
         logger.info(f"BBox: {bbox}")
 
         # Get EarthDaily client
@@ -118,6 +126,8 @@ class WorkbenchMedianComputer:
             "bands": bands,
             "resolution": resolution,
             "crs": crs,
+            "max_cloud_cover": max_cloud_cover,
+            "cloud_cover_property": CLOUD_COVER_PROPERTIES[sensor],
             **kwargs
         }
 
@@ -155,13 +165,25 @@ class WorkbenchMedianComputer:
             # Parse datetime range
             start_date, end_date = query_params["datetime"].split("/")
             
-            # Search catalog for imagery
+            # Build cloud cover filter
+            cloud_cover_property = query_params.get("cloud_cover_property", "eo:cloud_cover")
+            max_cloud_cover = query_params.get("max_cloud_cover", DEFAULT_MAX_CLOUD_COVER)
+            
+            # Search catalog for imagery with cloud cover filter
             logger.info(f"Searching catalog for {query_params['collection']}...")
+            logger.info(f"Filtering for cloud cover <= {max_cloud_cover}%")
+            
+            # Build property filter for cloud cover
+            property_filter = {
+                cloud_cover_property: {"lte": max_cloud_cover}
+            }
+            
             search_results = search(
                 product_id=query_params["collection"],
                 geometry=bbox_geom,
                 start_datetime=start_date,
                 end_datetime=end_date,
+                property_filter=property_filter,
             )
             
             num_scenes = len(list(search_results))
@@ -239,6 +261,7 @@ def compute_sentinel2_median_workbench(
     bands: Optional[List[str]] = None,
     resolution: Optional[int] = None,
     crs: Optional[str] = None,
+    max_cloud_cover: Optional[float] = None,
     api_key: Optional[str] = None,
     **kwargs
 ) -> Dict[str, Any]:
@@ -247,6 +270,20 @@ def compute_sentinel2_median_workbench(
     
     Ideal for use in Jupyter notebooks and EarthOne Workbench.
     Returns a Mosaic object that can be visualized interactively.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names (e.g., ['B2', 'B3', 'B4', 'B8'])
+        resolution: Output resolution in meters (default: 10m)
+        crs: Output CRS (default: EPSG:4326)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        api_key: Deprecated - use EARTHONE_CLIENT_ID/SECRET env vars
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary containing the computed median and metadata
     """
     computer = WorkbenchMedianComputer(api_key=api_key)
     return computer.compute_median(
@@ -257,6 +294,7 @@ def compute_sentinel2_median_workbench(
         bands=bands,
         resolution=resolution,
         crs=crs,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )
 
@@ -268,6 +306,7 @@ def compute_landsat_median_workbench(
     bands: Optional[List[str]] = None,
     resolution: Optional[int] = None,
     crs: Optional[str] = None,
+    max_cloud_cover: Optional[float] = None,
     api_key: Optional[str] = None,
     **kwargs
 ) -> Dict[str, Any]:
@@ -276,6 +315,20 @@ def compute_landsat_median_workbench(
     
     Ideal for use in Jupyter notebooks and EarthOne Workbench.
     Returns a Mosaic object that can be visualized interactively.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names (e.g., ['B2', 'B3', 'B4', 'B5'])
+        resolution: Output resolution in meters (default: 30m)
+        crs: Output CRS (default: EPSG:4326)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        api_key: Deprecated - use EARTHONE_CLIENT_ID/SECRET env vars
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary containing the computed median and metadata
     """
     computer = WorkbenchMedianComputer(api_key=api_key)
     return computer.compute_median(
@@ -286,6 +339,7 @@ def compute_landsat_median_workbench(
         bands=bands,
         resolution=resolution,
         crs=crs,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )
 
@@ -297,6 +351,7 @@ def compute_aster_median_workbench(
     bands: Optional[List[str]] = None,
     resolution: Optional[int] = None,
     crs: Optional[str] = None,
+    max_cloud_cover: Optional[float] = None,
     api_key: Optional[str] = None,
     **kwargs
 ) -> Dict[str, Any]:
@@ -305,6 +360,20 @@ def compute_aster_median_workbench(
     
     Ideal for use in Jupyter notebooks and EarthOne Workbench.
     Returns a Mosaic object that can be visualized interactively.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names (e.g., ['B01', 'B02', 'B3N'])
+        resolution: Output resolution in meters (default: 15m)
+        crs: Output CRS (default: EPSG:4326)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        api_key: Deprecated - use EARTHONE_CLIENT_ID/SECRET env vars
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary containing the computed median and metadata
     """
     computer = WorkbenchMedianComputer(api_key=api_key)
     return computer.compute_median(
@@ -315,6 +384,7 @@ def compute_aster_median_workbench(
         bands=bands,
         resolution=resolution,
         crs=crs,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )
 

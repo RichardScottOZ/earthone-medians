@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
 
-from .config import SENSOR_CONFIGS, DEFAULT_CRS
+from .config import SENSOR_CONFIGS, DEFAULT_CRS, DEFAULT_MAX_CLOUD_COVER, CLOUD_COVER_PROPERTIES
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class ServerlessMedianComputer:
         crs: Optional[str] = None,
         cpus: float = 1.0,
         memory: int = 2048,
+        max_cloud_cover: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -69,6 +70,9 @@ class ServerlessMedianComputer:
             crs: Output CRS
             cpus: CPU allocation for the compute job (default: 1.0, range: 0.25-8+)
             memory: Memory allocation in MB (default: 2048, range: 512-32768+)
+            max_cloud_cover: Maximum cloud cover percentage (0-100). Default: 20%.
+                           Filters imagery to only include scenes with cloud cover
+                           less than or equal to this threshold.
             **kwargs: Additional parameters
 
         Returns:
@@ -99,9 +103,13 @@ class ServerlessMedianComputer:
         
         if crs is None:
             crs = DEFAULT_CRS
+        
+        if max_cloud_cover is None:
+            max_cloud_cover = DEFAULT_MAX_CLOUD_COVER
 
         logger.info(f"Submitting serverless compute job for {sensor}")
         logger.info(f"Bands: {bands}, Resolution: {resolution}m, CRS: {crs}")
+        logger.info(f"Max cloud cover: {max_cloud_cover}%")
 
         # Get auth
         self._get_auth()
@@ -112,7 +120,7 @@ class ServerlessMedianComputer:
             import numpy as np
             
             # Define the median computation function
-            def compute_median_job(collection, bbox, start_date, end_date, bands, resolution, crs):
+            def compute_median_job(collection, bbox, start_date, end_date, bands, resolution, crs, max_cloud_cover, cloud_cover_property):
                 """Function that runs on EarthOne compute infrastructure."""
                 import numpy as np
                 from earthdaily.earthone.catalog import search
@@ -122,12 +130,18 @@ class ServerlessMedianComputer:
                 # Create bbox geometry
                 bbox_geom = box(*bbox)
                 
-                # Search for imagery
+                # Build property filter for cloud cover
+                property_filter = {
+                    cloud_cover_property: {"lte": max_cloud_cover}
+                }
+                
+                # Search for imagery with cloud cover filter
                 results = search(
                     product_id=collection,
                     geometry=bbox_geom,
                     start_datetime=start_date,
                     end_datetime=end_date,
+                    property_filter=property_filter,
                 )
                 
                 images = list(results)
@@ -191,7 +205,9 @@ class ServerlessMedianComputer:
                 end_date,
                 bands,
                 resolution,
-                crs
+                crs,
+                max_cloud_cover,
+                CLOUD_COVER_PROPERTIES[sensor],
             )
             
             logger.info(f"Job submitted: {job.id}")
@@ -259,12 +275,28 @@ def compute_sentinel2_median_serverless(
     crs: Optional[str] = None,
     cpus: float = 1.0,
     memory: int = 2048,
+    max_cloud_cover: Optional[float] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
     Compute Sentinel-2 median using serverless batch processing.
     
     Submits a job to EarthOne Compute API for scalable processing.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names
+        resolution: Output resolution in meters
+        crs: Output CRS
+        cpus: CPU allocation (default: 1.0)
+        memory: Memory in MB (default: 2048)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary with job information and results
     """
     computer = ServerlessMedianComputer()
     return computer.compute_median(
@@ -277,6 +309,7 @@ def compute_sentinel2_median_serverless(
         crs=crs,
         cpus=cpus,
         memory=memory,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )
 
@@ -290,12 +323,28 @@ def compute_landsat_median_serverless(
     crs: Optional[str] = None,
     cpus: float = 1.0,
     memory: int = 2048,
+    max_cloud_cover: Optional[float] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
     Compute Landsat median using serverless batch processing.
     
     Submits a job to EarthOne Compute API for scalable processing.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names
+        resolution: Output resolution in meters
+        crs: Output CRS
+        cpus: CPU allocation (default: 1.0)
+        memory: Memory in MB (default: 2048)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary with job information and results
     """
     computer = ServerlessMedianComputer()
     return computer.compute_median(
@@ -308,6 +357,7 @@ def compute_landsat_median_serverless(
         crs=crs,
         cpus=cpus,
         memory=memory,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )
 
@@ -321,12 +371,28 @@ def compute_aster_median_serverless(
     crs: Optional[str] = None,
     cpus: float = 1.0,
     memory: int = 2048,
+    max_cloud_cover: Optional[float] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """
     Compute ASTER median using serverless batch processing.
     
     Submits a job to EarthOne Compute API for scalable processing.
+    
+    Args:
+        bbox: Bounding box [min_lon, min_lat, max_lon, max_lat]
+        start_date: Start date (ISO format: 'YYYY-MM-DD')
+        end_date: End date (ISO format: 'YYYY-MM-DD')
+        bands: List of band names
+        resolution: Output resolution in meters
+        crs: Output CRS
+        cpus: CPU allocation (default: 1.0)
+        memory: Memory in MB (default: 2048)
+        max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        **kwargs: Additional parameters
+    
+    Returns:
+        Dictionary with job information and results
     """
     computer = ServerlessMedianComputer()
     return computer.compute_median(
@@ -339,5 +405,6 @@ def compute_aster_median_serverless(
         crs=crs,
         cpus=cpus,
         memory=memory,
+        max_cloud_cover=max_cloud_cover,
         **kwargs
     )

@@ -35,7 +35,11 @@ my_function = Function(
 - **CPU allocation:** Configurable from 0.25 to 8+ CPUs per job
 - **Memory allocation:** Configurable from 512 MB to 32+ GB per job
 - **Timeout:** Maximum execution time per job (configurable, typically up to 3600 seconds/1 hour)
-- **Return payload:** Limited to 1 MB in size
+- **Return payload limit:** 1 MB maximum size for data returned from the function
+  - **What this means:** The function's return value (as serialized JSON/data) cannot exceed 1 MB
+  - **Why it exists:** Prevents platform abuse and ensures stability
+  - **Workaround:** For large results (e.g., raster data), save to cloud storage and return a reference (URL/ID) instead
+  - **Example:** Instead of returning a 50 MB image array, save it to storage and return `{"result_url": "s3://bucket/result.tif"}`
 
 ### Rate Limits
 - **Compute seconds quota:** Aggregated across all queries
@@ -245,7 +249,7 @@ If your workflow requires higher limits:
 | **CPU per job** | 1.0 | Yes (0.25-8+) | Job performance |
 | **Memory per job** | 2048 MB | Yes (512-32768+ MB) | Job memory limit |
 | **Timeout** | 3600s | Yes | Max job duration |
-| **Return payload** | 1 MB | No | Result size limit |
+| **Return payload** | 1 MB | No | Result size limit (use storage for large data) |
 | **Compute seconds** | Varies by account | No (contact support) | Monthly usage |
 
 ## References

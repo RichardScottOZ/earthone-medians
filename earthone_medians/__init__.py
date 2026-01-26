@@ -40,6 +40,7 @@ from .serverless import (
     compute_sentinel2_median_serverless,
     compute_landsat_median_serverless,
     compute_aster_median_serverless,
+    retrieve_blob_result,
 )
 
 # Import bare earth functions
@@ -83,6 +84,7 @@ __all__ = [
     "compute_sentinel2_median_serverless",
     "compute_landsat_median_serverless",
     "compute_aster_median_serverless",
+    "retrieve_blob_result",
     # Bare Earth API
     "BareEarthComputer",
     "ServerlessBareEarthComputer",

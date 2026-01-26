@@ -34,6 +34,10 @@ def test_serverless_geotiff():
     
     # Submit job
     print("Submitting serverless compute job...")
+    print("  (This may take a moment to connect to EarthOne...)")
+    import sys
+    sys.stdout.flush()
+    
     result = compute_sentinel2_median_serverless(
         bbox=bbox,
         start_date=start_date,

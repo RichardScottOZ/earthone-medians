@@ -86,6 +86,12 @@ SPECTRAL_INDICES = {
         "description": "Used for vegetation masking and weighting",
         "range": (-1.0, 1.0),
     },
+    "ndsi": {
+        "name": "Normalized Difference Snow Index",
+        "formula": "(green - swir1) / (green + swir1)",
+        "description": "Used for snow/ice masking and weighting in alpine regions",
+        "range": (-1.0, 1.0),
+    },
     "bsi": {
         "name": "Bare Soil Index",
         "formula": "((swir1 + red) - (nir + blue)) / ((swir1 + red) + (nir + blue))",
@@ -130,16 +136,21 @@ class BareEarthComputer:
     The weighting scheme favors pixels with lower vegetation cover (lower NDVI),
     effectively selecting observations where soil and rock are most exposed.
     
+    For alpine/snow regions, optional NDSI weighting can exclude snow-covered
+    observations from the composite.
+    
     Attributes:
         ndvi_threshold: NDVI threshold for bare earth classification (default: 0.3)
-        vegetation_weight_method: Method for vegetation weighting ('inverse_ndvi' or 'exponential')
+        ndsi_threshold: NDSI threshold for snow masking (default: 0.4)
+        exclude_snow: Whether to downweight snow-covered pixels (default: False)
     """
     
     def __init__(
         self,
         api_key: Optional[str] = None,
         ndvi_threshold: float = 0.3,
-        vegetation_weight_method: str = "inverse_ndvi",
+        ndsi_threshold: float = 0.4,
+        exclude_snow: bool = False,
     ):
         """
         Initialize the BareEarthComputer.
@@ -148,13 +159,15 @@ class BareEarthComputer:
             api_key: Optional API key (deprecated, use environment variables)
             ndvi_threshold: NDVI threshold below which pixels are considered bare
                           (default: 0.3 based on Roberts et al., 2019)
-            vegetation_weight_method: Method for computing vegetation weights
-                                    - 'inverse_ndvi': weight = (1 - NDVI)
-                                    - 'exponential': weight = exp(-NDVI * k)
+            ndsi_threshold: NDSI threshold above which pixels are considered snow
+                          (default: 0.4 based on USGS recommendations)
+            exclude_snow: If True, downweight snow-covered pixels using NDSI.
+                         Recommended for alpine/Andes regions. (default: False)
         """
         self.api_key = api_key
         self.ndvi_threshold = ndvi_threshold
-        self.vegetation_weight_method = vegetation_weight_method
+        self.ndsi_threshold = ndsi_threshold
+        self.exclude_snow = exclude_snow
         self._earthdaily = None
     
     def _get_earthdaily_client(self):
@@ -226,6 +239,15 @@ class BareEarthComputer:
                 return 0.0
             return (nir - red) / (nir + red)
         
+        elif index_name == "ndsi":
+            if "green" not in mapped_values or "swir1" not in mapped_values:
+                return None
+            green = mapped_values["green"]
+            swir1 = mapped_values["swir1"]
+            if green + swir1 == 0:
+                return 0.0
+            return (green - swir1) / (green + swir1)
+        
         elif index_name == "bsi":
             required = ["swir1", "red", "nir", "blue"]
             if not all(k in mapped_values for k in required):
@@ -278,31 +300,32 @@ class BareEarthComputer:
         
         return None
     
-    def compute_vegetation_weight(self, ndvi: float) -> float:
+    def compute_bare_earth_weight(self, ndvi: float, ndsi: float = 0.0) -> float:
         """
-        Compute vegetation weight for bare earth calculation.
+        Compute combined weight for bare earth calculation.
         
-        Lower NDVI values (less vegetation) receive higher weights.
+        Lower NDVI (less vegetation) and lower NDSI (less snow) receive higher weights.
         
         Args:
             ndvi: NDVI value (-1 to 1)
+            ndsi: NDSI value (-1 to 1), only used if exclude_snow=True
             
         Returns:
-            Weight value (0 to 1), higher for bare pixels
+            Weight value (0 to 1), higher for bare non-snow pixels
         """
-        # Clamp NDVI to valid range
+        # Clamp to valid ranges
         ndvi = max(-1.0, min(1.0, ndvi))
+        ndsi = max(-1.0, min(1.0, ndsi))
         
-        if self.vegetation_weight_method == "exponential":
-            # Exponential weighting: weight = exp(-NDVI * k) where k controls steepness
-            k = 3.0  # Steepness factor
-            # Normalize NDVI to 0-1 range first
-            ndvi_normalized = (ndvi + 1.0) / 2.0
-            weight = math.exp(-ndvi_normalized * k)
+        # Vegetation weight: inverse NDVI (low veg = high weight)
+        veg_weight = (1.0 - ndvi) / 2.0
+        
+        # Snow weight: inverse NDSI if enabled (low snow = high weight)
+        if self.exclude_snow:
+            snow_weight = 1.0 - max(0.0, ndsi)  # Only penalize positive NDSI
+            weight = veg_weight * snow_weight
         else:
-            # Default: inverse NDVI weighting
-            # weight = (1 - NDVI) / 2 for range 0-1
-            weight = (1.0 - ndvi) / 2.0
+            weight = veg_weight
         
         return max(0.0, min(1.0, weight))
     
@@ -864,6 +887,8 @@ def compute_bare_earth_sentinel2(
     crs: Optional[str] = None,
     max_cloud_cover: Optional[float] = None,
     ndvi_threshold: float = 0.3,
+    ndsi_threshold: float = 0.4,
+    exclude_snow: bool = False,
     compute_indices: bool = True,
     api_key: Optional[str] = None,
     **kwargs
@@ -880,6 +905,8 @@ def compute_bare_earth_sentinel2(
         crs: Output CRS (default: EPSG:4326)
         max_cloud_cover: Maximum cloud cover percentage (default: 20)
         ndvi_threshold: NDVI threshold for bare earth classification (default: 0.3)
+        ndsi_threshold: NDSI threshold for snow detection (default: 0.4)
+        exclude_snow: If True, downweight snow pixels. Use for alpine/Andes regions.
         compute_indices: Compute spectral indices (default: True)
         api_key: Deprecated - use environment variables
         **kwargs: Additional parameters
@@ -890,6 +917,8 @@ def compute_bare_earth_sentinel2(
     computer = BareEarthComputer(
         api_key=api_key,
         ndvi_threshold=ndvi_threshold,
+        ndsi_threshold=ndsi_threshold,
+        exclude_snow=exclude_snow,
     )
     return computer.compute_bare_earth(
         sensor="sentinel2",
@@ -914,6 +943,8 @@ def compute_bare_earth_landsat(
     crs: Optional[str] = None,
     max_cloud_cover: Optional[float] = None,
     ndvi_threshold: float = 0.3,
+    ndsi_threshold: float = 0.4,
+    exclude_snow: bool = False,
     compute_indices: bool = True,
     api_key: Optional[str] = None,
     **kwargs
@@ -933,6 +964,8 @@ def compute_bare_earth_landsat(
         crs: Output CRS (default: EPSG:4326)
         max_cloud_cover: Maximum cloud cover percentage (default: 20)
         ndvi_threshold: NDVI threshold for bare earth classification (default: 0.3)
+        ndsi_threshold: NDSI threshold for snow detection (default: 0.4)
+        exclude_snow: If True, downweight snow pixels. Use for alpine/Andes regions.
         compute_indices: Compute spectral indices (default: True)
         api_key: Deprecated - use environment variables
         **kwargs: Additional parameters
@@ -943,6 +976,8 @@ def compute_bare_earth_landsat(
     computer = BareEarthComputer(
         api_key=api_key,
         ndvi_threshold=ndvi_threshold,
+        ndsi_threshold=ndsi_threshold,
+        exclude_snow=exclude_snow,
     )
     return computer.compute_bare_earth(
         sensor="landsat",

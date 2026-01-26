@@ -21,6 +21,16 @@ from .workbench import (
     compute_landsat_median_workbench,
     compute_aster_median_workbench,
 )
+from .bare_earth import (
+    compute_bare_earth_sentinel2,
+    compute_bare_earth_landsat,
+    compute_bare_earth_aster,
+    compute_bare_earth_sentinel2_serverless,
+    compute_bare_earth_landsat_serverless,
+    compute_bare_earth_aster_serverless,
+    SPECTRAL_INDICES,
+    BARE_EARTH_REQUIRED_BANDS,
+)
 from .config import SENTINEL2_BANDS, LANDSAT_BANDS, ASTER_BANDS, DEFAULT_MAX_CLOUD_COVER
 
 
@@ -71,17 +81,37 @@ def main():
     )
     
     parser.add_argument(
+        "--bare-earth",
+        action="store_true",
+        help="Compute bare earth (barest earth) composite using weighted geometric median. "
+             "Based on Roberts et al. (2019) methodology to reveal soil/rock with minimal vegetation."
+    )
+    
+    parser.add_argument(
+        "--ndvi-threshold",
+        type=float,
+        default=0.3,
+        help="NDVI threshold for bare earth classification (default: 0.3). Only used with --bare-earth."
+    )
+    
+    parser.add_argument(
+        "--compute-indices",
+        action="store_true",
+        help="Compute spectral indices for soil/mineral mapping. Only used with --bare-earth."
+    )
+    
+    parser.add_argument(
         "--cpus",
         type=float,
         default=1.0,
-        help="CPU allocation for serverless compute (default: 1.0). Only used with --method serverless."
+        help="CPU allocation for serverless compute (default: 1.0, 2.0 for bare-earth). Only used with --method serverless."
     )
     
     parser.add_argument(
         "--memory",
         type=int,
         default=2048,
-        help="Memory allocation in MB for serverless compute (default: 2048). Only used with --method serverless."
+        help="Memory allocation in MB for serverless compute (default: 2048, 4096 for bare-earth). Only used with --method serverless."
     )
     
     parser.add_argument(
@@ -101,7 +131,7 @@ def main():
     
     parser.add_argument(
         "--bands",
-        help="Comma-separated list of bands (e.g., 'B2,B3,B4,B8'). If not specified, uses all science bands."
+        help="Comma-separated list of bands (e.g., 'B2,B3,B4,B8'). If not specified, uses all science bands (or required bare earth bands with --bare-earth)."
     )
     
     parser.add_argument(
@@ -139,6 +169,12 @@ def main():
     )
     
     parser.add_argument(
+        "--list-indices",
+        action="store_true",
+        help="List available spectral indices for bare earth soil/mineral mapping and exit"
+    )
+    
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -148,6 +184,17 @@ def main():
     args = parser.parse_args()
     
     setup_logging(args.verbose)
+    
+    # List spectral indices if requested
+    if args.list_indices:
+        print("\nAvailable spectral indices for bare earth soil/mineral mapping:")
+        print("-" * 70)
+        for name, info in SPECTRAL_INDICES.items():
+            print(f"{name:15s} - {info['name']}")
+            print(f"{'':15s}   Formula: {info['formula']}")
+            print(f"{'':15s}   {info['description']}")
+            print()
+        return 0
     
     # List bands if requested
     if args.list_bands:
@@ -163,12 +210,18 @@ def main():
             print(f"{band_id:6s} - {band_info['name']:15s} "
                   f"(Resolution: {band_info['resolution']}m, "
                   f"Wavelength: {band_info['wavelength']})")
+        
+        # Show required bare earth bands
+        if args.sensor in BARE_EARTH_REQUIRED_BANDS:
+            print(f"\nRequired bands for bare earth computation:")
+            print(f"  {', '.join(BARE_EARTH_REQUIRED_BANDS[args.sensor])}")
         print()
         return 0
     
     # Validate required arguments for computation
     if not args.bbox or not args.start_date or not args.end_date:
-        print("Error: --bbox, --start-date, and --end-date are required for median computation", file=sys.stderr)
+        computation_type = "bare earth" if args.bare_earth else "median"
+        print(f"Error: --bbox, --start-date, and --end-date are required for {computation_type} computation", file=sys.stderr)
         parser.print_help()
         return 1
     
@@ -180,50 +233,111 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         return 1
     
-    # Select computation function based on sensor and method
-    if args.method == "serverless":
-        compute_functions = {
-            "sentinel2": compute_sentinel2_median_serverless,
-            "landsat": compute_landsat_median_serverless,
-            "aster": compute_aster_median_serverless,
-        }
-    else:  # workbench
-        compute_functions = {
-            "sentinel2": compute_sentinel2_median_workbench,
-            "landsat": compute_landsat_median_workbench,
-            "aster": compute_aster_median_workbench,
-        }
+    # Select computation function based on sensor, method, and bare_earth flag
+    if args.bare_earth:
+        # Bare earth computation
+        if args.method == "serverless":
+            compute_functions = {
+                "sentinel2": compute_bare_earth_sentinel2_serverless,
+                "landsat": compute_bare_earth_landsat_serverless,
+                "aster": compute_bare_earth_aster_serverless,
+            }
+            # Use higher defaults for bare earth serverless
+            cpus = args.cpus if args.cpus != 1.0 else 2.0
+            memory = args.memory if args.memory != 2048 else 4096
+        else:  # workbench
+            compute_functions = {
+                "sentinel2": compute_bare_earth_sentinel2,
+                "landsat": compute_bare_earth_landsat,
+                "aster": compute_bare_earth_aster,
+            }
+            cpus = args.cpus
+            memory = args.memory
+    else:
+        # Standard median computation
+        if args.method == "serverless":
+            compute_functions = {
+                "sentinel2": compute_sentinel2_median_serverless,
+                "landsat": compute_landsat_median_serverless,
+                "aster": compute_aster_median_serverless,
+            }
+        else:  # workbench
+            compute_functions = {
+                "sentinel2": compute_sentinel2_median_workbench,
+                "landsat": compute_landsat_median_workbench,
+                "aster": compute_aster_median_workbench,
+            }
+        cpus = args.cpus
+        memory = args.memory
     
     compute_fn = compute_functions[args.sensor]
     
-    # Compute median
+    # Determine compute_indices value - default to True for bare earth if not specified
+    compute_indices = args.compute_indices if args.bare_earth else False
+    if args.bare_earth and not args.compute_indices:
+        # Default to True for bare earth computation
+        compute_indices = True
+    
+    # Compute result
     try:
-        logging.info(f"Using {args.method} method for computation")
+        computation_type = "bare earth" if args.bare_earth else "median"
+        logging.info(f"Using {args.method} method for {computation_type} computation")
         
-        if args.method == "serverless":
-            result = compute_fn(
-                bbox=bbox,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                bands=bands,
-                resolution=args.resolution,
-                crs=args.crs,
-                api_key=args.api_key,
-                cpus=args.cpus,
-                memory=args.memory,
-                max_cloud_cover=args.max_cloud_cover,
-            )
-        else:  # workbench
-            result = compute_fn(
-                bbox=bbox,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                bands=bands,
-                resolution=args.resolution,
-                crs=args.crs,
-                api_key=args.api_key,
-                max_cloud_cover=args.max_cloud_cover,
-            )
+        if args.bare_earth:
+            # Bare earth computation
+            if args.method == "serverless":
+                result = compute_fn(
+                    bbox=bbox,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    bands=bands,
+                    resolution=args.resolution,
+                    crs=args.crs,
+                    cpus=cpus,
+                    memory=memory,
+                    max_cloud_cover=args.max_cloud_cover,
+                    ndvi_threshold=args.ndvi_threshold,
+                    compute_indices=compute_indices,
+                )
+            else:  # workbench
+                result = compute_fn(
+                    bbox=bbox,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    bands=bands,
+                    resolution=args.resolution,
+                    crs=args.crs,
+                    max_cloud_cover=args.max_cloud_cover,
+                    ndvi_threshold=args.ndvi_threshold,
+                    compute_indices=compute_indices,
+                    api_key=args.api_key,
+                )
+        else:
+            # Standard median computation
+            if args.method == "serverless":
+                result = compute_fn(
+                    bbox=bbox,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    bands=bands,
+                    resolution=args.resolution,
+                    crs=args.crs,
+                    api_key=args.api_key,
+                    cpus=cpus,
+                    memory=memory,
+                    max_cloud_cover=args.max_cloud_cover,
+                )
+            else:  # workbench
+                result = compute_fn(
+                    bbox=bbox,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    bands=bands,
+                    resolution=args.resolution,
+                    crs=args.crs,
+                    api_key=args.api_key,
+                    max_cloud_cover=args.max_cloud_cover,
+                )
         
         # Format output
         output_json = json.dumps(result, indent=2)
@@ -239,7 +353,8 @@ def main():
         return 0
         
     except Exception as e:
-        logging.error(f"Error computing median: {e}", exc_info=args.verbose)
+        computation_type = "bare earth" if args.bare_earth else "median"
+        logging.error(f"Error computing {computation_type}: {e}", exc_info=args.verbose)
         return 1
 
 

@@ -24,6 +24,7 @@ setup(
         "numpy>=2.0.0",
         "pandas>=1.3.0",
         "geopandas>=0.10.0",
+        "rasterio>=1.3.0",
     ],
     entry_points={
         "console_scripts": [

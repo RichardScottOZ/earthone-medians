@@ -8,7 +8,13 @@ Tests:
 """
 
 import os
+import sys
 import tempfile
+import logging
+
+# Enable logging to see what's happening
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
 from earthone_medians import (
     compute_sentinel2_median_serverless,
     retrieve_blob_result,

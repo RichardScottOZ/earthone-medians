@@ -16,13 +16,11 @@ setup(
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.10",
     install_requires=[
-        "earthdaily-earthone>=5.0.0",
-        "earthdaily-earthone-dynamic-compute>=0.1.0",
+        "earthdaily-earthone[visualization]>=5.0.0",
         "numpy>=2.0.0",
         "pandas>=1.3.0",
         "geopandas>=0.10.0",

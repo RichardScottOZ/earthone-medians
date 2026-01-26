@@ -244,6 +244,7 @@ class ServerlessMedianComputer:
                 memory=memory,
                 timeout=3600,  # 1 hour timeout
                 maximum_concurrency=max_concurrency,
+                retry_count=0,
                 requirements=[
                     "earthdaily-earthone>=5.0.0",
                     "numpy>=2.0.0",

@@ -97,8 +97,7 @@ def main():
     parser.add_argument(
         "--compute-indices",
         action="store_true",
-        default=True,
-        help="Compute spectral indices for soil/mineral mapping (default: True). Only used with --bare-earth."
+        help="Compute spectral indices for soil/mineral mapping. Only used with --bare-earth."
     )
     
     parser.add_argument(
@@ -273,6 +272,12 @@ def main():
     
     compute_fn = compute_functions[args.sensor]
     
+    # Determine compute_indices value - default to True for bare earth if not specified
+    compute_indices = args.compute_indices if args.bare_earth else False
+    if args.bare_earth and not args.compute_indices:
+        # Default to True for bare earth computation
+        compute_indices = True
+    
     # Compute result
     try:
         computation_type = "bare earth" if args.bare_earth else "median"
@@ -292,7 +297,7 @@ def main():
                     memory=memory,
                     max_cloud_cover=args.max_cloud_cover,
                     ndvi_threshold=args.ndvi_threshold,
-                    compute_indices=args.compute_indices,
+                    compute_indices=compute_indices,
                 )
             else:  # workbench
                 result = compute_fn(
@@ -304,7 +309,7 @@ def main():
                     crs=args.crs,
                     max_cloud_cover=args.max_cloud_cover,
                     ndvi_threshold=args.ndvi_threshold,
-                    compute_indices=args.compute_indices,
+                    compute_indices=compute_indices,
                     api_key=args.api_key,
                 )
         else:

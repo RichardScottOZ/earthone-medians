@@ -210,62 +210,71 @@ class BareEarthComputer:
         
         band_mapping = BARE_EARTH_BAND_MAPPINGS.get(sensor, {})
         
-        try:
-            # Get mapped band values
-            mapped_values = {}
-            for role, band_name in band_mapping.items():
-                if band_name in band_values:
-                    mapped_values[role] = band_values[band_name]
-            
-            # Compute index based on formula
-            if index_name == "ndvi":
-                nir = mapped_values.get("nir", 0)
-                red = mapped_values.get("red", 0)
-                if nir + red == 0:
-                    return 0.0
-                return (nir - red) / (nir + red)
-            
-            elif index_name == "bsi":
-                swir1 = mapped_values.get("swir1", 0)
-                red = mapped_values.get("red", 0)
-                nir = mapped_values.get("nir", 0)
-                blue = mapped_values.get("blue", 0)
-                numerator = (swir1 + red) - (nir + blue)
-                denominator = (swir1 + red) + (nir + blue)
-                if denominator == 0:
-                    return 0.0
-                return numerator / denominator
-            
-            elif index_name == "iron_oxide":
-                red = mapped_values.get("red", 0)
-                blue = mapped_values.get("blue", 1)  # Avoid div by zero
-                if blue == 0:
-                    return 0.0
-                return red / blue
-            
-            elif index_name == "ferrous":
-                swir1 = mapped_values.get("swir1", 0)
-                nir = mapped_values.get("nir", 1)
-                if nir == 0:
-                    return 0.0
-                return swir1 / nir
-            
-            elif index_name == "clay_minerals":
-                swir1 = mapped_values.get("swir1", 0)
-                swir2 = mapped_values.get("swir2", 1)
-                if swir2 == 0:
-                    return 0.0
-                return swir1 / swir2
-            
-            elif index_name == "carbonate":
-                red = mapped_values.get("red", 0)
-                green = mapped_values.get("green", 1)
-                if green == 0:
-                    return 0.0
-                return red / green
-            
-        except KeyError:
-            return None
+        # Get mapped band values
+        mapped_values = {}
+        for role, band_name in band_mapping.items():
+            if band_name in band_values:
+                mapped_values[role] = band_values[band_name]
+        
+        # Compute index based on formula - return None if required bands are missing
+        if index_name == "ndvi":
+            if "nir" not in mapped_values or "red" not in mapped_values:
+                return None
+            nir = mapped_values["nir"]
+            red = mapped_values["red"]
+            if nir + red == 0:
+                return 0.0
+            return (nir - red) / (nir + red)
+        
+        elif index_name == "bsi":
+            required = ["swir1", "red", "nir", "blue"]
+            if not all(k in mapped_values for k in required):
+                return None
+            swir1 = mapped_values["swir1"]
+            red = mapped_values["red"]
+            nir = mapped_values["nir"]
+            blue = mapped_values["blue"]
+            numerator = (swir1 + red) - (nir + blue)
+            denominator = (swir1 + red) + (nir + blue)
+            if denominator == 0:
+                return 0.0
+            return numerator / denominator
+        
+        elif index_name == "iron_oxide":
+            if "red" not in mapped_values or "blue" not in mapped_values:
+                return None
+            red = mapped_values["red"]
+            blue = mapped_values["blue"]
+            if blue == 0:
+                return None  # Cannot compute without valid blue band
+            return red / blue
+        
+        elif index_name == "ferrous":
+            if "swir1" not in mapped_values or "nir" not in mapped_values:
+                return None
+            swir1 = mapped_values["swir1"]
+            nir = mapped_values["nir"]
+            if nir == 0:
+                return None  # Cannot compute without valid NIR band
+            return swir1 / nir
+        
+        elif index_name == "clay_minerals":
+            if "swir1" not in mapped_values or "swir2" not in mapped_values:
+                return None
+            swir1 = mapped_values["swir1"]
+            swir2 = mapped_values["swir2"]
+            if swir2 == 0:
+                return None  # Cannot compute without valid SWIR2 band
+            return swir1 / swir2
+        
+        elif index_name == "carbonate":
+            if "red" not in mapped_values or "green" not in mapped_values:
+                return None
+            red = mapped_values["red"]
+            green = mapped_values["green"]
+            if green == 0:
+                return None  # Cannot compute without valid green band
+            return red / green
         
         return None
     
@@ -687,6 +696,10 @@ class ServerlessBareEarthComputer:
                 arrays = []
                 weights = []
                 
+                # Band mapping for NIR and Red by sensor type (inferred from collection name)
+                nir_band_options = ["B8", "B5", "B3N"]  # Sentinel-2, Landsat, ASTER
+                red_band_options = ["B4", "B4", "B02"]  # Sentinel-2, Landsat, ASTER
+                
                 for img in images:
                     arr = raster.ndarray(
                         img.id,
@@ -697,17 +710,20 @@ class ServerlessBareEarthComputer:
                     )
                     arrays.append(arr)
                     
-                    # Calculate NDVI-based weight
-                    # Assumes band order matches expected (need to find NIR and Red indices)
-                    # Weight = 1 - NDVI (bare pixels get higher weight)
-                    nir_idx = bands.index("B8") if "B8" in bands else (
-                        bands.index("B5") if "B5" in bands else 
-                        bands.index("B3N") if "B3N" in bands else None
-                    )
-                    red_idx = bands.index("B4") if "B4" in bands else (
-                        bands.index("B02") if "B02" in bands else None
-                    )
+                    # Find NIR and Red band indices from the bands list
+                    nir_idx = None
+                    red_idx = None
+                    for nir_opt in nir_band_options:
+                        if nir_opt in bands:
+                            nir_idx = bands.index(nir_opt)
+                            break
+                    for red_opt in red_band_options:
+                        if red_opt in bands:
+                            red_idx = bands.index(red_opt)
+                            break
                     
+                    # Calculate NDVI-based weight
+                    # Weight = 1 - NDVI (bare pixels get higher weight)
                     if nir_idx is not None and red_idx is not None:
                         nir = arr[nir_idx].astype(float)
                         red = arr[red_idx].astype(float)
@@ -723,7 +739,9 @@ class ServerlessBareEarthComputer:
                     
                     weights.append(weight)
                 
-                # Compute weighted geometric median
+                # Compute weighted composite
+                # Note: This uses weighted mean as an efficient approximation.
+                # A true geometric median would require iterative optimization.
                 stack = np.stack(arrays, axis=0)
                 weight_stack = np.stack(weights, axis=0)
                 
@@ -731,7 +749,7 @@ class ServerlessBareEarthComputer:
                 weight_sum = np.sum(weight_stack, axis=0, keepdims=True)
                 weight_stack = np.where(weight_sum > 0, weight_stack / weight_sum, 1.0 / num_images)
                 
-                # Weighted median (approximation using weighted mean for efficiency)
+                # Weighted mean composite (approximates bare earth by favoring low-vegetation observations)
                 bare_earth_result = np.sum(stack * weight_stack[:, np.newaxis, :, :], axis=0)
                 
                 return {
@@ -740,7 +758,7 @@ class ServerlessBareEarthComputer:
                     "shape": bare_earth_result.shape,
                     "dtype": str(bare_earth_result.dtype),
                     "result": bare_earth_result,
-                    "method": "weighted_geometric_median",
+                    "method": "weighted_mean_composite",
                 }
             
             # Create and register the Function

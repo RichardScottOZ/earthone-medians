@@ -337,6 +337,25 @@ class TestBareEarthComputer(unittest.TestCase):
         expected = 0.3 / 0.1  # = 3.0
         self.assertAlmostEqual(iron_oxide, expected, places=5)
 
+    def test_compute_spectral_index_missing_bands(self):
+        """Test spectral index returns None when required bands are missing."""
+        computer = BareEarthComputer()
+        
+        # NDVI without NIR band should return None
+        band_values = {"B4": 0.1}  # Only Red, no NIR
+        ndvi = computer.compute_spectral_index("ndvi", band_values, "sentinel2")
+        self.assertIsNone(ndvi)
+        
+        # Iron oxide without blue band should return None
+        band_values = {"B4": 0.3}  # Only Red, no Blue
+        iron_oxide = computer.compute_spectral_index("iron_oxide", band_values, "sentinel2")
+        self.assertIsNone(iron_oxide)
+        
+        # ASTER iron oxide should return None (ASTER has no blue band)
+        band_values = {"B02": 0.3}  # Red only for ASTER
+        iron_oxide = computer.compute_spectral_index("iron_oxide", band_values, "aster")
+        self.assertIsNone(iron_oxide)
+
     def test_valid_parameters(self):
         """Test valid parameters are accepted."""
         computer = BareEarthComputer()

@@ -320,7 +320,7 @@ You can customize these or use them as references for your analysis.
 
 ## License
 
-MIT License
+
 
 ## Contributing
 

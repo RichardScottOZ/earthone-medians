@@ -119,7 +119,6 @@ class ServerlessMedianComputer:
 
         try:
             from earthdaily.earthone.compute import Function
-            from earthdaily.earthone.catalog import search
             import numpy as np
             
             # Define the median computation function
@@ -131,9 +130,9 @@ class ServerlessMedianComputer:
                 import numpy as np
                 import io
                 from datetime import datetime
-                from earthdaily.earthone.catalog import search, Blob
+                from earthdaily.earthone.catalog import Product, Blob, properties as p
                 from earthdaily.earthone.compute import Result
-                from earthdaily.earthone import raster
+                from earthdaily.earthone.geo import AOI
                 from shapely.geometry import box
                 import rasterio
                 from rasterio.transform import from_bounds
@@ -142,40 +141,34 @@ class ServerlessMedianComputer:
                 bbox_geom = box(*bbox)
                 minx, miny, maxx, maxy = bbox
                 
-                # Build property filter for cloud cover
-                property_filter = {
-                    cloud_cover_property: {"lte": max_cloud_cover}
-                }
+                # Create AOI for spatial filtering
+                aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution)
                 
-                # Search for imagery with cloud cover filter
-                results = search(
-                    product_id=collection,
-                    geometry=bbox_geom,
-                    start_datetime=start_date,
-                    end_datetime=end_date,
-                    property_filter=property_filter,
+                # Get product and search for images
+                product = Product.get(collection)
+                
+                # Build search with filters
+                search = product.images().filter(
+                    p.acquired >= start_date,
+                    p.acquired < end_date,
                 )
                 
-                images = list(results)
+                # Add cloud cover filter if property exists
+                if cloud_cover_property == "eo:cloud_cover":
+                    search = search.filter(p.cloud_fraction <= max_cloud_cover / 100.0)
+                
+                # Filter by geometry and collect
+                images = search.intersects(bbox_geom).collect()
                 num_images = len(images)
                 
                 if num_images == 0:
                     return {"error": "No images found", "num_images": 0}
                 
-                # Load and stack rasters
-                arrays = []
-                for img in images:
-                    arr = raster.ndarray(
-                        img.id,
-                        bands=bands,
-                        resolution=resolution,
-                        crs=crs,
-                        bounds=bbox_geom.bounds
-                    )
-                    arrays.append(arr)
+                # Stack bands to ndarray
+                band_str = " ".join(bands)
+                stack = images.stack(band_str, aoi)
                 
-                # Stack and compute median
-                stack = np.stack(arrays, axis=0)
+                # Compute median along time axis
                 median_result = np.median(stack, axis=0)
                 
                 # Save as GeoTIFF

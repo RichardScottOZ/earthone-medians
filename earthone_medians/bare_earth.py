@@ -71,7 +71,7 @@ BARE_EARTH_BAND_MAPPINGS = {
 
 # Required bands for bare earth computation per sensor
 BARE_EARTH_REQUIRED_BANDS = {
-    "sentinel2": ["B2", "B3", "B4", "B8", "B11", "B12"],
+    "sentinel2": ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"],
     "landsat": ["B2", "B3", "B4", "B5", "B6", "B7"],
     "aster": ["B01", "B02", "B3N", "B04", "B05"],
 }

@@ -123,15 +123,24 @@ class ServerlessMedianComputer:
             import numpy as np
             
             # Define the median computation function
-            def compute_median_job(collection, bbox, start_date, end_date, bands, resolution, crs, max_cloud_cover, cloud_cover_property):
-                """Function that runs on EarthOne compute infrastructure."""
+            def compute_median_job(collection, bbox, start_date, end_date, bands, resolution, crs, max_cloud_cover, cloud_cover_property, job_name):
+                """Function that runs on EarthOne compute infrastructure.
+                
+                Saves result to EarthOne Storage as a GeoTIFF blob, returns reference.
+                """
                 import numpy as np
-                from earthdaily.earthone.catalog import search
+                import io
+                from datetime import datetime
+                from earthdaily.earthone.catalog import search, Blob
+                from earthdaily.earthone.compute import Result
                 from earthdaily.earthone import raster
                 from shapely.geometry import box
+                import rasterio
+                from rasterio.transform import from_bounds
                 
                 # Create bbox geometry
                 bbox_geom = box(*bbox)
+                minx, miny, maxx, maxy = bbox
                 
                 # Build property filter for cloud cover
                 property_filter = {
@@ -156,7 +165,6 @@ class ServerlessMedianComputer:
                 # Load and stack rasters
                 arrays = []
                 for img in images:
-                    # Load bands from each image
                     arr = raster.ndarray(
                         img.id,
                         bands=bands,
@@ -170,19 +178,71 @@ class ServerlessMedianComputer:
                 stack = np.stack(arrays, axis=0)
                 median_result = np.median(stack, axis=0)
                 
-                return {
-                    "success": True,
-                    "num_images": num_images,
-                    "shape": median_result.shape,
-                    "dtype": str(median_result.dtype),
-                    "result": median_result
-                }
+                # Save as GeoTIFF
+                num_bands = median_result.shape[0] if median_result.ndim == 3 else 1
+                height = median_result.shape[-2]
+                width = median_result.shape[-1]
+                transform = from_bounds(minx, miny, maxx, maxy, width, height)
+                
+                buffer = io.BytesIO()
+                with rasterio.open(
+                    buffer, 'w', driver='GTiff',
+                    height=height, width=width, count=num_bands,
+                    dtype=median_result.dtype, crs=crs, transform=transform,
+                    compress='lzw',
+                ) as dst:
+                    if median_result.ndim == 3:
+                        for i in range(num_bands):
+                            dst.write(median_result[i], i + 1)
+                            dst.set_band_description(i + 1, bands[i] if i < len(bands) else f"band_{i+1}")
+                    else:
+                        dst.write(median_result, 1)
+                
+                buffer.seek(0)
+                
+                blob = Blob(
+                    name=f"{job_name}-result.tif",
+                    data=buffer.getvalue(),
+                    attributes={
+                        "type": "median_composite",
+                        "format": "GeoTIFF",
+                        "collection": collection,
+                        "bands": bands,
+                        "bbox": bbox,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "resolution": resolution,
+                        "crs": crs,
+                        "num_images": num_images,
+                        "shape": list(median_result.shape),
+                        "dtype": str(median_result.dtype),
+                        "created_at": datetime.utcnow().isoformat(),
+                    }
+                )
+                blob.save()
+                
+                # Return reference to stored blob (small payload)
+                return Result(
+                    data={
+                        "success": True,
+                        "blob_id": blob.id,
+                        "blob_name": blob.name,
+                        "num_images": num_images,
+                        "shape": list(median_result.shape),
+                        "dtype": str(median_result.dtype),
+                    },
+                    attributes={
+                        "job_name": job_name,
+                        "collection": collection,
+                    }
+                )
             
             # Create and register the Function
             logger.info("Creating serverless compute function...")
+            job_name = f"earthone-medians-{sensor}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
             func = Function(
                 compute_median_job,
-                name=f"earthone-medians-{sensor}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                name=job_name,
                 image="python3.10:latest",
                 cpus=cpus,
                 memory=memory,
@@ -192,6 +252,7 @@ class ServerlessMedianComputer:
                     "earthdaily-earthone>=5.0.0",
                     "numpy>=2.0.0",
                     "shapely>=2.0.0",
+                    "rasterio>=1.3.0",
                 ]
             )
             
@@ -211,6 +272,7 @@ class ServerlessMedianComputer:
                 crs,
                 max_cloud_cover,
                 CLOUD_COVER_PROPERTIES[sensor],
+                job_name,  # Pass job name for blob naming
             )
             
             logger.info(f"Job submitted: {job.id}")
@@ -237,13 +299,17 @@ class ServerlessMedianComputer:
                 "crs": crs,
                 "job_id": job.id,
                 "function_name": func.name,
-                "result": result,
+                "blob_id": result.get("blob_id") if isinstance(result, dict) else None,
+                "blob_name": result.get("blob_name") if isinstance(result, dict) else None,
+                "num_images": result.get("num_images") if isinstance(result, dict) else None,
+                "shape": result.get("shape") if isinstance(result, dict) else None,
                 "logs": logs,
                 "metadata": {
                     "computed_at": datetime.utcnow().isoformat(),
                     "cpus": cpus,
                     "memory_mb": memory,
                     "platform": "EarthOne Compute API",
+                    "storage": "EarthOne Blob Storage",
                 }
             }
             
@@ -420,3 +486,31 @@ def compute_aster_median_serverless(
         max_concurrency=max_concurrency,
         **kwargs
     )
+
+
+def retrieve_blob_result(blob_id: str, output_path: Optional[str] = None):
+    """
+    Retrieve a median composite GeoTIFF from EarthOne Blob storage.
+    
+    Args:
+        blob_id: The blob ID returned from a serverless compute job
+        output_path: Optional path to save the GeoTIFF locally
+        
+    Returns:
+        If output_path provided: saves file and returns path
+        Otherwise: returns rasterio DatasetReader for in-memory access
+    """
+    import io
+    from earthdaily.earthone.catalog import Blob
+    import rasterio
+    
+    blob = Blob.get(blob_id)
+    data = blob.data
+    
+    if output_path:
+        with open(output_path, 'wb') as f:
+            f.write(data)
+        return output_path
+    
+    buffer = io.BytesIO(data)
+    return rasterio.open(buffer)

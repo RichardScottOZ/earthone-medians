@@ -200,8 +200,11 @@ class ServerlessMedianComputer:
                 
                 buffer.seek(0)
                 
+                # Build descriptive blob name
+                blob_name = f"median_{collection.split(':')[-1]}_{minx}_{miny}_{maxx}_{maxy}_{start_date}_{end_date}.tif"
+                
                 blob = Blob(
-                    name=f"{job_name}-result.tif",
+                    name=blob_name,
                     data=buffer.getvalue(),
                     attributes={
                         "type": "median_composite",

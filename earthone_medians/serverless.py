@@ -25,7 +25,7 @@ class ServerlessMedianComputer:
         """Lazy initialization of EarthOne Auth."""
         if self._auth is None:
             try:
-                from earthdaily.earthone import Auth
+                from earthdaily.earthone.auth import Auth
                 self._auth = Auth()
             except ImportError:
                 raise ImportError(

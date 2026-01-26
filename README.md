@@ -332,6 +332,42 @@ Bare earth modelling uses a **weighted geometric median** algorithm to identify 
 - Uses NDVI (Normalized Difference Vegetation Index) weighting to prioritize bare observations
 - Produces composites ideal for **geology, soil mapping, mineral exploration, and agriculture**
 
+### Implementation Details & Comparison with hdmedians
+
+This implementation provides bare earth compositing through the EarthOne Platform rather than implementing the full geometric median algorithm locally. Here's how it compares to Roberts' original [`hdmedians`](https://github.com/daleroberts/hdmedians) library:
+
+| Aspect | Roberts' hdmedians | This Implementation |
+|--------|-------------------|---------------------|
+| **Algorithm** | High-dimensional geometric median using Weiszfeld's algorithm with various optimizations | EarthOne Platform's built-in `geomedian` function (workbench) or NDVI-weighted mean approximation (serverless) |
+| **Computation** | Local computation with NumPy/Cython | Cloud-based via EarthOne Platform's serverless infrastructure |
+| **Weighting** | Nangeomedian (handles NaN values) and standard geomedian | NDVI-based weighting: `weight = 1 - NDVI` to favor bare pixels |
+| **Scalability** | Limited by local memory | Scalable via EarthOne's distributed compute |
+| **Dependencies** | Requires `hdmedians` package with Cython compilation | Uses EarthOne Platform APIs only |
+
+**Key Differences:**
+
+1. **Workbench Mode**: Uses EarthOne's `Mosaic.from_product_bands()` with `function="geomedian"`, which implements a geometric median on the platform side. This is closest to the original methodology but the exact algorithm implementation is managed by EarthOne.
+
+2. **Serverless Mode**: Uses a **weighted mean approximation** rather than a true geometric median. Each observation is weighted by `(1 - NDVI)` so that pixels with less vegetation contribute more to the final composite. While not mathematically equivalent to a geometric median, this produces similar results for bare earth identification by prioritizing low-vegetation observations.
+
+3. **No Direct hdmedians Integration**: This package does not use the [`hdmedians`](https://github.com/daleroberts/hdmedians) library directly. For applications requiring the exact algorithm from Roberts et al. (2019), consider using `hdmedians` with data downloaded from EarthOne.
+
+**For True Geometric Median Computation:**
+
+If you need the exact high-dimensional geometric median algorithm as implemented in Roberts' research, you can:
+
+```python
+# Option 1: Use hdmedians directly with downloaded data
+import hdmedians as hd
+import numpy as np
+
+# After downloading imagery via EarthOne...
+geomedian = hd.geomedian(data_stack, axis=0)  # Compute geometric median
+
+# Option 2: Use nangeomedian for data with missing values
+nangeomedian = hd.nangeomedian(data_stack, axis=0)
+```
+
 ### Python API - Bare Earth
 
 ```python

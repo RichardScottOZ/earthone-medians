@@ -271,17 +271,46 @@ class ServerlessMedianComputer:
                 job_name,  # Pass job name for blob naming
             )
             
-            logger.info(f"Job submitted: {job.id}")
-            logger.info("Waiting for job completion...")
+            logger.info(f"Job submitted successfully!")
+            logger.info(f"  Job ID: {job.id}")
+            logger.info(f"  Status: {job.status}")
             
-            # Wait for completion (with timeout)
-            job.wait_for_completion(timeout=3600)
+            # Poll for completion with progress updates
+            import time
+            poll_interval = 10  # seconds
+            elapsed = 0
+            timeout = 3600
+            
+            while elapsed < timeout:
+                status = job.status
+                logger.info(f"  [{elapsed}s] Job status: {status}")
+                
+                if status in ("SUCCEEDED", "SUCCESS", "COMPLETED"):
+                    break
+                elif status in ("FAILED", "ERROR", "CANCELLED"):
+                    logger.error(f"Job failed with status: {status}")
+                    return {
+                        "status": "error",
+                        "error": f"Job failed: {status}",
+                        "job_id": job.id,
+                        "logs": job.log() if hasattr(job, 'log') else None,
+                    }
+                
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+            
+            if elapsed >= timeout:
+                return {
+                    "status": "error",
+                    "error": "Job timed out",
+                    "job_id": job.id,
+                }
             
             # Get results
             result = job.result()
-            logs = job.log()
+            logs = job.log() if hasattr(job, 'log') else None
             
-            logger.info("Job completed successfully")
+            logger.info("Job completed successfully!")
             
             return {
                 "status": "success",

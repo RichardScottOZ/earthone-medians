@@ -40,17 +40,17 @@ ASTER_BANDS = {
 # Sensor configurations for EarthOne Platform
 SENSOR_CONFIGS = {
     "sentinel2": {
-        "collection": "earthdaily:sentinel-2-l2a",
+        "collection": "esa:sentinel-2:l2a:v1",
         "bands": SENTINEL2_BANDS,
         "default_resolution": 10,
     },
     "landsat": {
-        "collection": "earthdaily:landsat-8-c2-l2",
+        "collection": "usgs:landsat:oli-tirs:c2:l2:v0",
         "bands": LANDSAT_BANDS,
         "default_resolution": 30,
     },
     "aster": {
-        "collection": "earthdaily:aster-l1t",
+        "collection": "nasa:aster:l1t:vnir:v1",
         "bands": ASTER_BANDS,
         "default_resolution": 15,
     },

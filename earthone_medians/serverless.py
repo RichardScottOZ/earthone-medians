@@ -46,6 +46,7 @@ class ServerlessMedianComputer:
         cpus: float = 1.0,
         memory: int = 2048,
         max_cloud_cover: Optional[float] = None,
+        max_concurrency: int = 10,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -73,6 +74,8 @@ class ServerlessMedianComputer:
             max_cloud_cover: Maximum cloud cover percentage (0-100). Default: 20%.
                            Filters imagery to only include scenes with cloud cover
                            less than or equal to this threshold.
+            max_concurrency: Maximum concurrent invocations of this function (default: 10).
+                           Platform limit is 1,000 concurrent jobs per user.
             **kwargs: Additional parameters
 
         Returns:
@@ -184,7 +187,7 @@ class ServerlessMedianComputer:
                 cpus=cpus,
                 memory=memory,
                 timeout=3600,  # 1 hour timeout
-                maximum_concurrency=10,
+                maximum_concurrency=max_concurrency,
                 requirements=[
                     "earthdaily-earthone>=5.0.0",
                     "numpy>=2.0.0",
@@ -276,6 +279,7 @@ def compute_sentinel2_median_serverless(
     cpus: float = 1.0,
     memory: int = 2048,
     max_cloud_cover: Optional[float] = None,
+    max_concurrency: int = 10,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -293,6 +297,7 @@ def compute_sentinel2_median_serverless(
         cpus: CPU allocation (default: 1.0)
         memory: Memory in MB (default: 2048)
         max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        max_concurrency: Max parallel invocations of this function (default: 10)
         **kwargs: Additional parameters
     
     Returns:
@@ -310,6 +315,7 @@ def compute_sentinel2_median_serverless(
         cpus=cpus,
         memory=memory,
         max_cloud_cover=max_cloud_cover,
+        max_concurrency=max_concurrency,
         **kwargs
     )
 
@@ -324,6 +330,7 @@ def compute_landsat_median_serverless(
     cpus: float = 1.0,
     memory: int = 2048,
     max_cloud_cover: Optional[float] = None,
+    max_concurrency: int = 10,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -341,6 +348,7 @@ def compute_landsat_median_serverless(
         cpus: CPU allocation (default: 1.0)
         memory: Memory in MB (default: 2048)
         max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        max_concurrency: Max parallel invocations of this function (default: 10)
         **kwargs: Additional parameters
     
     Returns:
@@ -358,6 +366,7 @@ def compute_landsat_median_serverless(
         cpus=cpus,
         memory=memory,
         max_cloud_cover=max_cloud_cover,
+        max_concurrency=max_concurrency,
         **kwargs
     )
 
@@ -372,6 +381,7 @@ def compute_aster_median_serverless(
     cpus: float = 1.0,
     memory: int = 2048,
     max_cloud_cover: Optional[float] = None,
+    max_concurrency: int = 10,
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -389,6 +399,7 @@ def compute_aster_median_serverless(
         cpus: CPU allocation (default: 1.0)
         memory: Memory in MB (default: 2048)
         max_cloud_cover: Maximum cloud cover percentage (0-100, default: 20)
+        max_concurrency: Max parallel invocations of this function (default: 10)
         **kwargs: Additional parameters
     
     Returns:
@@ -406,5 +417,6 @@ def compute_aster_median_serverless(
         cpus=cpus,
         memory=memory,
         max_cloud_cover=max_cloud_cover,
+        max_concurrency=max_concurrency,
         **kwargs
     )

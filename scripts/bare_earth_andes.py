@@ -43,14 +43,14 @@ def generate_tiles(bbox, tile_size=0.5):
         y += tile_size
     return tiles
 
-def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries, median_type):
+def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries, median_type, overlap):
     """Submit a single tile job and return job object."""
     minx, miny, maxx, maxy = tile
     bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
     resolution_deg = resolution / 111000.0
     
     def compute_bare_earth_tile(
-        bbox, start_date, end_date, bands, resolution, cloud_max, median_type, crs="EPSG:4326"
+        bbox, start_date, end_date, bands, resolution, cloud_max, median_type, overlap, crs="EPSG:4326"
     ):
         import numpy as np
         import io
@@ -63,16 +63,19 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         
         try:
             minx, miny, maxx, maxy = bbox
-            bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
+            # Expand bbox by overlap for processing, clip back later
+            buf_minx, buf_miny = minx - overlap, miny - overlap
+            buf_maxx, buf_maxy = maxx + overlap, maxy + overlap
+            buffered_geom = box(buf_minx, buf_miny, buf_maxx, buf_maxy).__geo_interface__
             resolution_deg = resolution / 111000.0
-            aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution_deg)
+            aoi = AOI(geometry=buffered_geom, crs=crs, resolution=resolution_deg)
             
             product = Product.get("esa:sentinel-2:l2a:v1")
             search = (product.images()
                 .filter(p.acquired >= start_date)
                 .filter(p.acquired < end_date)
                 .filter(p.cloud_fraction <= cloud_max)
-                .intersects(bbox_geom))
+                .intersects(buffered_geom))
             images = search.collect()
             
             if len(images) == 0:
@@ -124,6 +127,14 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                 weight_sum = np.ma.sum(weights_expanded * ~data_bands.mask, axis=0)
                 median_result = (weighted_sum / (weight_sum + 1e-10)).filled(0)
             
+            # Clip back to original bbox if overlap was used
+            if overlap > 0:
+                full_h, full_w = median_result.shape[-2:]
+                # Calculate pixel offsets for clipping
+                px_overlap_x = int(overlap / resolution_deg)
+                px_overlap_y = int(overlap / resolution_deg)
+                median_result = median_result[:, px_overlap_y:full_h-px_overlap_y, px_overlap_x:full_w-px_overlap_x]
+            
             # Save GeoTIFF
             num_bands = median_result.shape[0]
             height, width = median_result.shape[-2:]
@@ -139,7 +150,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                     dst.set_band_description(i + 1, bands[i])
             
             buffer.seek(0)
-            blob_name = f"bare_earth_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"
+            blob_name = f"bare_earth{'_geomedian' if median_type == 'geometric' else ''}_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"
             blob = Blob(name=blob_name)
             blob.upload_data(buffer.getvalue())
             
@@ -163,7 +174,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         timeout=3600,
         maximum_concurrency=max_concurrent,
         retry_count=retries,
-        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
+        requirements=["earthdaily-earthone>=5.0.0", "numpy<2", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
     )
     
     job = func(
@@ -173,7 +184,8 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         bands=bands,
         resolution=resolution,
         cloud_max=cloud_max,
-        median_type=median_type
+        median_type=median_type,
+        overlap=overlap
     )
     return job, tile_id, tile
 
@@ -206,6 +218,7 @@ def main():
     parser.add_argument("--start", default="2019-01-01", help="Start date")
     parser.add_argument("--end", default="2024-01-01", help="End date")
     parser.add_argument("--tile-size", type=float, default=0.1, help="Tile size in degrees")
+    parser.add_argument("--overlap", type=float, default=0.0, help="Tile overlap/buffer in degrees (e.g., 0.01)")
     parser.add_argument("--max-concurrent", type=int, default=10, help="Max concurrent jobs")
     parser.add_argument("--memory", type=int, default=16384, help="Memory per job (MB)")
     parser.add_argument("--cpus", type=float, default=4.0, help="CPUs per job")
@@ -264,7 +277,7 @@ def main():
             try:
                 tile_id, tile = next(tile_iter)
                 job, tid, t = submit_tile_job(tile_id, tile, args.start, args.end, 
-                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
+                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type, args.overlap)
                 future = executor.submit(poll_job, job, tid)
                 futures[future] = (tid, t, job.id)
                 print(f"Submitted {tid}: {t}")
@@ -324,7 +337,7 @@ def main():
                 try:
                     next_tile_id, next_tile = next(tile_iter)
                     job, tid, t = submit_tile_job(next_tile_id, next_tile, args.start, args.end,
-                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
+                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type, args.overlap)
                     new_future = executor.submit(poll_job, job, tid)
                     futures[new_future] = (tid, t, job.id)
                     print(f"Submitted {tid}: {t}")

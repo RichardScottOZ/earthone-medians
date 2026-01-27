@@ -122,6 +122,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             ) as dst:
                 for i in range(num_bands):
                     dst.write(median_result[i].astype('float32'), i + 1)
+                    dst.set_band_description(i + 1, bands[i])
             
             buffer.seek(0)
             blob_name = f"bare_earth_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"

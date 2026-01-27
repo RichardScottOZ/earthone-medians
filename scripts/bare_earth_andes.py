@@ -143,7 +143,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         compute_bare_earth_tile,
         name=f"bare-earth-{tile_id}",
         image="python3.10:latest",
-        cpus=2.0,
+        cpus=cpus,
         memory=memory,
         timeout=3600,
         maximum_concurrency=max_concurrent,
@@ -239,7 +239,7 @@ def main():
             try:
                 tile_id, tile = next(tile_iter)
                 job, tid, t = submit_tile_job(tile_id, tile, args.start, args.end, 
-                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cloud, args.max_concurrent, args.retries)
+                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries)
                 future = executor.submit(poll_job, job, tid)
                 futures[future] = (tid, t, job.id)
                 print(f"Submitted {tid}: {t}")
@@ -274,7 +274,7 @@ def main():
                 try:
                     next_tile_id, next_tile = next(tile_iter)
                     job, tid, t = submit_tile_job(next_tile_id, next_tile, args.start, args.end,
-                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cloud, args.max_concurrent, args.retries)
+                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries)
                     new_future = executor.submit(poll_job, job, tid)
                     futures[new_future] = (tid, t, job.id)
                     print(f"Submitted {tid}: {t}")

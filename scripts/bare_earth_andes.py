@@ -169,7 +169,9 @@ def poll_job(job, tile_id, timeout=3600):
         elapsed = int(time.time() - start)
         print(f"  [{elapsed}s] {tile_id}: {job.status}")
         if job.status == "success":
-            return job.result()
+            result = job.result()
+            stats = getattr(job, 'statistics', None)
+            return {**result, "statistics": stats} if isinstance(result, dict) else result
         elif job.status == "failure":
             try:
                 result = job.result()

@@ -196,7 +196,9 @@ def main():
     parser.add_argument("--resolution", type=int, default=10, help="Resolution in meters")
     parser.add_argument("--cloud", type=float, default=0.1, help="Max cloud fraction 0-1")
     parser.add_argument("--retries", type=int, default=0, help="Retry count on failure")
-    parser.add_argument("--output-dir", default="./bare_earth_tiles", help="Output directory")
+    parser.add_argument("--output-dir", default="./bare_earth_tiles", help="Local output directory for tiles")
+    parser.add_argument("--s3-bucket", help="S3 bucket for output (optional, e.g. s3://my-bucket/bare-earth/)")
+    parser.add_argument("--download", action="store_true", help="Download tiles as they complete")
     parser.add_argument("--resume", action="store_true", help="Resume from progress file")
     parser.add_argument("--dry-run", action="store_true", help="Show tiles without running")
     parser.add_argument("--test", action="store_true", help="Use small test AOI instead of full Andes")
@@ -269,6 +271,31 @@ def main():
                 status = result.get("status", "unknown")
                 if status == "success":
                     print(f"✓ {tile_id}: {result.get('num_images')} images")
+                    
+                    # Download tile if requested
+                    if args.download and result.get("blob_id"):
+                        try:
+                            from earthdaily.earthone.catalog import Blob
+                            blob = Blob.get(id=result["blob_id"])
+                            data = blob.get_data(id=result["blob_id"])
+                            
+                            if args.s3_bucket:
+                                import boto3
+                                s3 = boto3.client('s3')
+                                bucket = args.s3_bucket.replace("s3://", "").split("/")[0]
+                                prefix = "/".join(args.s3_bucket.replace("s3://", "").split("/")[1:])
+                                key = f"{prefix}{tile_id}.tif" if prefix else f"{tile_id}.tif"
+                                s3.put_object(Bucket=bucket, Key=key, Body=data)
+                                completed[tile_id]["s3_path"] = f"s3://{bucket}/{key}"
+                                print(f"  → Uploaded to s3://{bucket}/{key}")
+                            else:
+                                local_path = output_dir / f"{tile_id}.tif"
+                                with open(local_path, 'wb') as f:
+                                    f.write(data)
+                                completed[tile_id]["local_path"] = str(local_path)
+                                print(f"  → Saved to {local_path}")
+                        except Exception as e:
+                            print(f"  ⚠ Download failed: {e}")
                 else:
                     print(f"✗ {tile_id}: {status} - {result.get('error', '')[:50]}")
                 

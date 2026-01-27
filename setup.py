@@ -25,6 +25,7 @@ setup(
         "pandas>=1.3.0",
         "geopandas>=0.10.0",
         "rasterio>=1.3.0",
+        "hdmedians>=0.14",
     ],
     entry_points={
         "console_scripts": [

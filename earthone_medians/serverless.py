@@ -149,8 +149,9 @@ class ServerlessMedianComputer:
                 
                 # Build search with filters
                 search = product.images().filter(
-                    p.acquired >= start_date,
-                    p.acquired < end_date,
+                    p.acquired >= start_date
+                ).filter(
+                    p.acquired < end_date
                 )
                 
                 # Add cloud cover filter if property exists

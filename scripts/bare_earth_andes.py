@@ -107,6 +107,10 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             
             if median_type == "geometric":
                 import hdmedians as hd
+                # Mask out high-veg and snow observations (weight < 0.3)
+                bad_obs = weights < 0.3
+                data_bands[bad_obs[:, np.newaxis, :, :].repeat(n_bands, axis=1)] = np.nan
+                
                 # Reshape: (images, bands, h, w) -> (h*w, images, bands)
                 data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)
                 # Vectorized geomedian across images (axis=1)

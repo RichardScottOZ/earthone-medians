@@ -1,0 +1,285 @@
+#!/usr/bin/env python
+"""
+Bare Earth composite for South America Andes region.
+Tiles the AOI and submits parallel serverless jobs.
+"""
+import argparse
+import json
+import time
+from pathlib import Path
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from earthdaily.earthone.catalog import Product, Blob, properties as p
+from earthdaily.earthone.compute import Function
+from earthdaily.earthone.geo import AOI
+from shapely.geometry import box
+
+# Andes AOI bounding box (from 4d-andes project)
+ANDES_BBOX = [-81.8, -39.5, -56.3, 0.8]  # [minx, miny, maxx, maxy]
+
+# Test subset - 2x2 degree chunk in central Chile/Argentina
+TEST_BBOX = [-70.5, -34.0, -68.5, -32.0]
+
+# GA Bare Earth bands (10 bands per Wilford et al. 2021)
+BARE_EARTH_BANDS = [
+    "blue", "green", "red",
+    "red-edge", "red-edge-2", "red-edge-3",
+    "nir", "red-edge-4",  # red-edge-4 = B8A (nir-narrow)
+    "swir1", "swir2"
+]
+
+def generate_tiles(bbox, tile_size=0.5):
+    """Generate tile bboxes covering the AOI."""
+    minx, miny, maxx, maxy = bbox
+    tiles = []
+    y = miny
+    while y < maxy:
+        x = minx
+        while x < maxx:
+            tile = [x, y, min(x + tile_size, maxx), min(y + tile_size, maxy)]
+            tiles.append(tile)
+            x += tile_size
+        y += tile_size
+    return tiles
+
+def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cloud_max, max_concurrent, retries):
+    """Submit a single tile job and return job object."""
+    minx, miny, maxx, maxy = tile
+    bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
+    resolution_deg = resolution / 111000.0
+    
+    def compute_bare_earth_tile(
+        bbox, start_date, end_date, bands, resolution, cloud_max, crs="EPSG:4326"
+    ):
+        import numpy as np
+        import io
+        import traceback
+        import rasterio
+        from rasterio.transform import from_bounds
+        from earthdaily.earthone.catalog import Product, Blob, properties as p
+        from earthdaily.earthone.geo import AOI
+        from shapely.geometry import box
+        
+        try:
+            minx, miny, maxx, maxy = bbox
+            bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
+            resolution_deg = resolution / 111000.0
+            aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution_deg)
+            
+            product = Product.get("esa:sentinel-2:l2a:v1")
+            search = (product.images()
+                .filter(p.acquired >= start_date)
+                .filter(p.acquired < end_date)
+                .filter(p.cloud_fraction <= cloud_max)
+                .intersects(bbox_geom))
+            images = search.collect()
+            
+            if len(images) == 0:
+                return {"status": "no_images", "bbox": bbox}
+            
+            # Stack with NIR for NDVI weighting
+            stack_bands = list(bands) if "nir" in bands else list(bands) + ["nir"]
+            stack = images.stack(" ".join(stack_bands), aoi)
+            data = np.ma.masked_invalid(stack.data)
+            
+            # Compute NDVI weights (favor low vegetation)
+            nir_idx = stack_bands.index("nir")
+            red_idx = stack_bands.index("red")
+            nir = data[:, nir_idx].astype(float)
+            red = data[:, red_idx].astype(float)
+            ndvi = (nir - red) / (nir + red + 1e-10)
+            weights = np.clip(1.0 - ndvi, 0.1, 1.0)
+            
+            # Compute NDSI for snow exclusion (favor non-snow)
+            green_idx = stack_bands.index("green")
+            swir1_idx = stack_bands.index("swir1")
+            green = data[:, green_idx].astype(float)
+            swir1 = data[:, swir1_idx].astype(float)
+            ndsi = (green - swir1) / (green + swir1 + 1e-10)
+            snow_weight = np.where(ndsi > 0.4, 0.1, 1.0)  # Penalize snow
+            weights = weights * snow_weight
+            
+            # Weighted median approximation (weighted mean for speed)
+            weights_expanded = weights[:, np.newaxis, :, :]
+            weighted_sum = np.ma.sum(data * weights_expanded, axis=0)
+            weight_sum = np.ma.sum(weights_expanded * ~data.mask, axis=0)
+            median_result = (weighted_sum / (weight_sum + 1e-10)).filled(0)
+            
+            # Keep only requested bands
+            band_indices = [stack_bands.index(b) for b in bands]
+            median_result = median_result[band_indices]
+            
+            # Save GeoTIFF
+            num_bands = median_result.shape[0]
+            height, width = median_result.shape[-2:]
+            transform = from_bounds(minx, miny, maxx, maxy, width, height)
+            
+            buffer = io.BytesIO()
+            with rasterio.open(buffer, 'w', driver='GTiff',
+                height=height, width=width, count=num_bands,
+                dtype='float32', crs=crs, transform=transform, compress='lzw'
+            ) as dst:
+                for i in range(num_bands):
+                    dst.write(median_result[i].astype('float32'), i + 1)
+            
+            buffer.seek(0)
+            blob_name = f"bare_earth_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}.tif"
+            blob = Blob(name=blob_name)
+            blob.upload_data(buffer.getvalue())
+            
+            return {
+                "status": "success",
+                "blob_id": blob.id,
+                "blob_name": blob_name,
+                "num_images": len(images),
+                "shape": list(median_result.shape),
+                "bbox": bbox
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e), "traceback": traceback.format_exc(), "bbox": bbox}
+    
+    func = Function(
+        compute_bare_earth_tile,
+        name=f"bare-earth-{tile_id}",
+        image="python3.10:latest",
+        cpus=2.0,
+        memory=memory,
+        timeout=3600,
+        maximum_concurrency=max_concurrent,
+        retry_count=retries,
+        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0"]
+    )
+    
+    job = func(
+        bbox=tile,
+        start_date=start_date,
+        end_date=end_date,
+        bands=bands,
+        resolution=resolution,
+        cloud_max=cloud_max
+    )
+    return job, tile_id, tile
+
+def poll_job(job, tile_id, timeout=3600):
+    """Poll job until complete."""
+    start = time.time()
+    while time.time() - start < timeout:
+        job.refresh()
+        if job.status == "success":
+            return job.result()
+        elif job.status == "failure":
+            return {"status": "failure", "error": "Job failed"}
+        time.sleep(10)
+    return {"status": "timeout"}
+
+def main():
+    parser = argparse.ArgumentParser(description="Bare Earth composite for Andes")
+    parser.add_argument("--start", default="2019-01-01", help="Start date")
+    parser.add_argument("--end", default="2024-01-01", help="End date")
+    parser.add_argument("--tile-size", type=float, default=0.1, help="Tile size in degrees")
+    parser.add_argument("--max-concurrent", type=int, default=10, help="Max concurrent jobs")
+    parser.add_argument("--memory", type=int, default=8192, help="Memory per job (MB)")
+    parser.add_argument("--resolution", type=int, default=10, help="Resolution in meters")
+    parser.add_argument("--cloud", type=float, default=0.1, help="Max cloud fraction 0-1")
+    parser.add_argument("--retries", type=int, default=0, help="Retry count on failure")
+    parser.add_argument("--output-dir", default="./bare_earth_tiles", help="Output directory")
+    parser.add_argument("--resume", action="store_true", help="Resume from progress file")
+    parser.add_argument("--dry-run", action="store_true", help="Show tiles without running")
+    parser.add_argument("--test", action="store_true", help="Use small test AOI instead of full Andes")
+    parser.add_argument("--limit", type=int, help="Limit number of tiles to process")
+    args = parser.parse_args()
+
+    bbox = TEST_BBOX if args.test else ANDES_BBOX
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    progress_file = output_dir / "progress.json"
+
+    tiles = generate_tiles(bbox, args.tile_size)
+    print(f"AOI: {bbox}")
+    print(f"Total tiles: {len(tiles)} ({args.tile_size}° grid)")
+
+    if args.dry_run:
+        print(f"Would process {len(tiles)} tiles from {args.start} to {args.end}")
+        print(f"Estimated time at {args.max_concurrent} concurrent: {len(tiles) * 4 / args.max_concurrent / 60:.1f} hours")
+        return
+
+    # Load progress if resuming
+    completed = {}
+    if args.resume and progress_file.exists():
+        with open(progress_file) as f:
+            completed = json.load(f)
+        print(f"Resuming: {len(completed)} tiles already done")
+
+    # Filter out completed tiles
+    pending_tiles = [(f"tile_{i:04d}", tile) for i, tile in enumerate(tiles) 
+                     if f"tile_{i:04d}" not in completed]
+    if args.limit:
+        pending_tiles = pending_tiles[:args.limit]
+    print(f"Tiles to process: {len(pending_tiles)}")
+
+    # Submit and poll jobs in parallel
+    active_jobs = {}  # tile_id -> (job, tile)
+    
+    with ThreadPoolExecutor(max_workers=args.max_concurrent) as executor:
+        tile_iter = iter(pending_tiles)
+        futures = {}
+        
+        # Initial batch
+        for _ in range(min(args.max_concurrent, len(pending_tiles))):
+            try:
+                tile_id, tile = next(tile_iter)
+                job, tid, t = submit_tile_job(tile_id, tile, args.start, args.end, 
+                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cloud, args.max_concurrent, args.retries)
+                future = executor.submit(poll_job, job, tid)
+                futures[future] = (tid, t, job.id)
+                print(f"Submitted {tid}: {t}")
+            except StopIteration:
+                break
+        
+        # Process as jobs complete
+        while futures:
+            done_futures = [f for f in futures if f.done()]
+            
+            for future in done_futures:
+                tile_id, tile, job_id = futures.pop(future)
+                result = future.result()
+                
+                completed[tile_id] = {
+                    "bbox": tile,
+                    "job_id": job_id,
+                    **result
+                }
+                
+                status = result.get("status", "unknown")
+                if status == "success":
+                    print(f"✓ {tile_id}: {result.get('num_images')} images")
+                else:
+                    print(f"✗ {tile_id}: {status} - {result.get('error', '')[:50]}")
+                
+                # Save progress
+                with open(progress_file, "w") as f:
+                    json.dump(completed, f, indent=2)
+                
+                # Submit next tile
+                try:
+                    next_tile_id, next_tile = next(tile_iter)
+                    job, tid, t = submit_tile_job(next_tile_id, next_tile, args.start, args.end,
+                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cloud, args.max_concurrent, args.retries)
+                    new_future = executor.submit(poll_job, job, tid)
+                    futures[new_future] = (tid, t, job.id)
+                    print(f"Submitted {tid}: {t}")
+                except StopIteration:
+                    pass
+            
+            if futures:
+                time.sleep(5)
+
+    success = sum(1 for v in completed.values() if v.get("status") == "success")
+    print(f"\nCompleted: {success}/{len(tiles)} tiles")
+    print(f"Progress: {progress_file}")
+
+if __name__ == "__main__":
+    main()

@@ -43,14 +43,14 @@ def generate_tiles(bbox, tile_size=0.5):
         y += tile_size
     return tiles
 
-def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries):
+def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries, median_type):
     """Submit a single tile job and return job object."""
     minx, miny, maxx, maxy = tile
     bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
     resolution_deg = resolution / 111000.0
     
     def compute_bare_earth_tile(
-        bbox, start_date, end_date, bands, resolution, cloud_max, crs="EPSG:4326"
+        bbox, start_date, end_date, bands, resolution, cloud_max, median_type, crs="EPSG:4326"
     ):
         import numpy as np
         import io
@@ -100,15 +100,25 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             snow_weight = np.where(ndsi > 0.4, 0.1, 1.0)  # Penalize snow
             weights = weights * snow_weight
             
-            # Weighted median approximation (weighted mean for speed)
-            weights_expanded = weights[:, np.newaxis, :, :]
-            weighted_sum = np.ma.sum(data * weights_expanded, axis=0)
-            weight_sum = np.ma.sum(weights_expanded * ~data.mask, axis=0)
-            median_result = (weighted_sum / (weight_sum + 1e-10)).filled(0)
-            
-            # Keep only requested bands
+            # Keep only requested bands for median
             band_indices = [stack_bands.index(b) for b in bands]
-            median_result = median_result[band_indices]
+            data_bands = data[:, band_indices, :, :].filled(np.nan)
+            n_img, n_bands, h, w = data_bands.shape
+            
+            if median_type == "geometric":
+                import hdmedians as hd
+                # Reshape: (images, bands, h, w) -> (h*w, images, bands)
+                data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)
+                # Vectorized geomedian across images (axis=1)
+                result_flat = hd.nangeomedian(data_reshaped, axis=1)  # (h*w, bands)
+                median_result = result_flat.reshape(h, w, n_bands).transpose(2, 0, 1)  # (bands, h, w)
+            else:
+                # Basic: weighted mean approximation
+                data_bands = np.ma.array(data_bands, mask=np.isnan(data_bands))
+                weights_expanded = weights[:, np.newaxis, :, :]
+                weighted_sum = np.ma.sum(data_bands * weights_expanded, axis=0)
+                weight_sum = np.ma.sum(weights_expanded * ~data_bands.mask, axis=0)
+                median_result = (weighted_sum / (weight_sum + 1e-10)).filled(0)
             
             # Save GeoTIFF
             num_bands = median_result.shape[0]
@@ -149,7 +159,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         timeout=3600,
         maximum_concurrency=max_concurrent,
         retry_count=retries,
-        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0"]
+        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
     )
     
     job = func(
@@ -158,7 +168,8 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         end_date=end_date,
         bands=bands,
         resolution=resolution,
-        cloud_max=cloud_max
+        cloud_max=cloud_max,
+        median_type=median_type
     )
     return job, tile_id, tile
 
@@ -196,6 +207,7 @@ def main():
     parser.add_argument("--cpus", type=float, default=4.0, help="CPUs per job")
     parser.add_argument("--resolution", type=int, default=10, help="Resolution in meters")
     parser.add_argument("--cloud", type=float, default=0.1, help="Max cloud fraction 0-1")
+    parser.add_argument("--median-type", choices=["basic", "geometric"], default="basic", help="Median type: basic (per-band) or geometric (spectral)")
     parser.add_argument("--retries", type=int, default=0, help="Retry count on failure")
     parser.add_argument("--output-dir", default="./bare_earth_tiles", help="Local output directory for tiles")
     parser.add_argument("--s3-bucket", help="S3 bucket for output (optional, e.g. s3://my-bucket/bare-earth/)")
@@ -248,7 +260,7 @@ def main():
             try:
                 tile_id, tile = next(tile_iter)
                 job, tid, t = submit_tile_job(tile_id, tile, args.start, args.end, 
-                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries)
+                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
                 future = executor.submit(poll_job, job, tid)
                 futures[future] = (tid, t, job.id)
                 print(f"Submitted {tid}: {t}")
@@ -308,7 +320,7 @@ def main():
                 try:
                     next_tile_id, next_tile = next(tile_iter)
                     job, tid, t = submit_tile_job(next_tile_id, next_tile, args.start, args.end,
-                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries)
+                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
                     new_future = executor.submit(poll_job, job, tid)
                     futures[new_future] = (tid, t, job.id)
                     print(f"Submitted {tid}: {t}")

@@ -124,7 +124,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                     dst.write(median_result[i].astype('float32'), i + 1)
             
             buffer.seek(0)
-            blob_name = f"bare_earth_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}.tif"
+            blob_name = f"bare_earth_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"
             blob = Blob(name=blob_name)
             blob.upload_data(buffer.getvalue())
             
@@ -171,6 +171,10 @@ def poll_job(job, tile_id, timeout=3600):
         if job.status == "success":
             result = job.result()
             stats = getattr(job, 'statistics', None)
+            if stats:
+                stats = {"cpu": str(stats.cpu) if hasattr(stats, 'cpu') else None,
+                         "memory": str(stats.memory) if hasattr(stats, 'memory') else None,
+                         "network": str(stats.network) if hasattr(stats, 'network') else None}
             return {**result, "statistics": stats} if isinstance(result, dict) else result
         elif job.status == "failure":
             try:

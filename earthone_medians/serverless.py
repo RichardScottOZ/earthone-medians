@@ -129,50 +129,58 @@ class ServerlessMedianComputer:
                 """
                 import numpy as np
                 import io
+                import traceback
                 from datetime import datetime
                 from earthdaily.earthone.catalog import Product, Blob, properties as p
-                from earthdaily.earthone.compute import Result
                 from earthdaily.earthone.geo import AOI
                 from shapely.geometry import box
                 import rasterio
                 from rasterio.transform import from_bounds
                 
-                # Create bbox geometry
-                bbox_geom = box(*bbox)
-                minx, miny, maxx, maxy = bbox
+                try:
+                    print("[1/6] Creating bbox geometry...")
+                    bbox_geom = box(*bbox)
+                    minx, miny, maxx, maxy = bbox
+                    
+                    print("[2/6] Creating AOI...")
+                    if crs == "EPSG:4326":
+                        resolution_crs = resolution / 111000.0
+                    else:
+                        resolution_crs = resolution
+                    aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution_crs)
+                    
+                    print("[3/6] Getting product and searching images...")
+                    product = Product.get(collection)
+                    search = product.images().filter(
+                        p.acquired >= start_date
+                    ).filter(
+                        p.acquired < end_date
+                    )
+                    if cloud_cover_property == "eo:cloud_cover":
+                        search = search.filter(p.cloud_fraction <= max_cloud_cover / 100.0)
+                    images = search.intersects(bbox_geom).collect()
+                    num_images = len(images)
+                    print(f"    Found {num_images} images")
+                    
+                    if num_images == 0:
+                        return {"error": "No images found", "num_images": 0}
+                    
+                    print("[4/6] Stacking bands...")
+                    band_str = " ".join(bands)
+                    stack = images.stack(band_str, aoi)
+                    print(f"    Stack shape: {stack.shape}")
+                    
+                    print("[5/6] Computing median...")
+                    median_result = np.ma.median(stack, axis=0).filled(0)
+                    print(f"    Median shape: {median_result.shape}")
+                    
+                    # DEBUG: Return early to test if compute works (skip GeoTIFF/Blob)
+                    return {"debug": "COMPUTE_ONLY_TEST", "num_images": num_images, "shape": list(median_result.shape), "dtype": str(median_result.dtype)}
+                    
+                except Exception as e:
+                    return {"error": str(e), "traceback": traceback.format_exc()}
                 
-                # Create AOI for spatial filtering
-                aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution)
-                
-                # Get product and search for images
-                product = Product.get(collection)
-                
-                # Build search with filters
-                search = product.images().filter(
-                    p.acquired >= start_date
-                ).filter(
-                    p.acquired < end_date
-                )
-                
-                # Add cloud cover filter if property exists
-                if cloud_cover_property == "eo:cloud_cover":
-                    search = search.filter(p.cloud_fraction <= max_cloud_cover / 100.0)
-                
-                # Filter by geometry and collect
-                images = search.intersects(bbox_geom).collect()
-                num_images = len(images)
-                
-                if num_images == 0:
-                    return {"error": "No images found", "num_images": 0}
-                
-                # Stack bands to ndarray
-                band_str = " ".join(bands)
-                stack = images.stack(band_str, aoi)
-                
-                # Compute median along time axis
-                median_result = np.median(stack, axis=0)
-                
-                # Save as GeoTIFF
+                # Save as GeoTIFF (unreachable while debug is enabled)
                 num_bands = median_result.shape[0] if median_result.ndim == 3 else 1
                 height = median_result.shape[-2]
                 width = median_result.shape[-1]

@@ -43,7 +43,7 @@ def generate_tiles(bbox, tile_size=0.5):
         y += tile_size
     return tiles
 
-def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cloud_max, max_concurrent, retries):
+def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries):
     """Submit a single tile job and return job object."""
     minx, miny, maxx, maxy = tile
     bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
@@ -166,10 +166,16 @@ def poll_job(job, tile_id, timeout=3600):
     start = time.time()
     while time.time() - start < timeout:
         job.refresh()
+        elapsed = int(time.time() - start)
+        print(f"  [{elapsed}s] {tile_id}: {job.status}")
         if job.status == "success":
             return job.result()
         elif job.status == "failure":
-            return {"status": "failure", "error": "Job failed"}
+            try:
+                result = job.result()
+                return {"status": "failure", "error": str(result)}
+            except:
+                return {"status": "failure", "error": "Job failed (no details)"}
         time.sleep(10)
     return {"status": "timeout"}
 
@@ -179,7 +185,8 @@ def main():
     parser.add_argument("--end", default="2024-01-01", help="End date")
     parser.add_argument("--tile-size", type=float, default=0.1, help="Tile size in degrees")
     parser.add_argument("--max-concurrent", type=int, default=10, help="Max concurrent jobs")
-    parser.add_argument("--memory", type=int, default=8192, help="Memory per job (MB)")
+    parser.add_argument("--memory", type=int, default=16384, help="Memory per job (MB)")
+    parser.add_argument("--cpus", type=float, default=4.0, help="CPUs per job")
     parser.add_argument("--resolution", type=int, default=10, help="Resolution in meters")
     parser.add_argument("--cloud", type=float, default=0.1, help="Max cloud fraction 0-1")
     parser.add_argument("--retries", type=int, default=0, help="Retry count on failure")

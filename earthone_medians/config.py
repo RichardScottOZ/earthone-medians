@@ -14,27 +14,31 @@ SENTINEL2_BANDS = {
     "swir2": {"name": "SWIR 2", "resolution": 20, "wavelength": "2190 nm"},
 }
 
-# Landsat useful science bands (excluding coastal aerosol)
+# Landsat useful science bands (EarthOne naming)
 LANDSAT_BANDS = {
-    "B2": {"name": "Blue", "resolution": 30, "wavelength": "450-510 nm"},
-    "B3": {"name": "Green", "resolution": 30, "wavelength": "530-590 nm"},
-    "B4": {"name": "Red", "resolution": 30, "wavelength": "640-670 nm"},
-    "B5": {"name": "NIR", "resolution": 30, "wavelength": "850-880 nm"},
-    "B6": {"name": "SWIR 1", "resolution": 30, "wavelength": "1570-1650 nm"},
-    "B7": {"name": "SWIR 2", "resolution": 30, "wavelength": "2110-2290 nm"},
+    "blue": {"name": "Blue", "resolution": 30, "wavelength": "450-510 nm"},
+    "green": {"name": "Green", "resolution": 30, "wavelength": "530-590 nm"},
+    "red": {"name": "Red", "resolution": 30, "wavelength": "640-670 nm"},
+    "nir": {"name": "NIR", "resolution": 30, "wavelength": "850-880 nm"},
+    "swir1": {"name": "SWIR 1", "resolution": 30, "wavelength": "1570-1650 nm"},
+    "swir2": {"name": "SWIR 2", "resolution": 30, "wavelength": "2110-2290 nm"},
 }
 
-# ASTER useful science bands
+# ASTER VNIR bands (EarthOne naming) - SWIR is separate product
 ASTER_BANDS = {
-    "B01": {"name": "Green", "resolution": 15, "wavelength": "520-600 nm", "subsystem": "VNIR"},
-    "B02": {"name": "Red", "resolution": 15, "wavelength": "630-690 nm", "subsystem": "VNIR"},
-    "B3N": {"name": "NIR", "resolution": 15, "wavelength": "760-860 nm", "subsystem": "VNIR"},
-    "B04": {"name": "SWIR 1", "resolution": 30, "wavelength": "1600-1700 nm", "subsystem": "SWIR"},
-    "B05": {"name": "SWIR 2", "resolution": 30, "wavelength": "2145-2185 nm", "subsystem": "SWIR"},
-    "B06": {"name": "SWIR 3", "resolution": 30, "wavelength": "2185-2225 nm", "subsystem": "SWIR"},
-    "B07": {"name": "SWIR 4", "resolution": 30, "wavelength": "2235-2285 nm", "subsystem": "SWIR"},
-    "B08": {"name": "SWIR 5", "resolution": 30, "wavelength": "2295-2365 nm", "subsystem": "SWIR"},
-    "B09": {"name": "SWIR 6", "resolution": 30, "wavelength": "2360-2430 nm", "subsystem": "SWIR"},
+    "green": {"name": "Green", "resolution": 15, "wavelength": "520-600 nm", "subsystem": "VNIR"},
+    "red": {"name": "Red", "resolution": 15, "wavelength": "630-690 nm", "subsystem": "VNIR"},
+    "nir": {"name": "NIR", "resolution": 15, "wavelength": "760-860 nm", "subsystem": "VNIR"},
+}
+
+# ASTER SWIR bands (separate product: nasa:aster:l1t:swir:v1)
+ASTER_SWIR_BANDS = {
+    "swir1": {"name": "SWIR 1", "resolution": 30, "wavelength": "1600-1700 nm", "subsystem": "SWIR"},
+    "swir2": {"name": "SWIR 2", "resolution": 30, "wavelength": "2145-2185 nm", "subsystem": "SWIR"},
+    "swir3": {"name": "SWIR 3", "resolution": 30, "wavelength": "2185-2225 nm", "subsystem": "SWIR"},
+    "swir4": {"name": "SWIR 4", "resolution": 30, "wavelength": "2235-2285 nm", "subsystem": "SWIR"},
+    "swir5": {"name": "SWIR 5", "resolution": 30, "wavelength": "2295-2365 nm", "subsystem": "SWIR"},
+    "swir6": {"name": "SWIR 6", "resolution": 30, "wavelength": "2360-2430 nm", "subsystem": "SWIR"},
 }
 
 # Sensor configurations for EarthOne Platform

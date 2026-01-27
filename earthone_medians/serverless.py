@@ -199,8 +199,8 @@ class ServerlessMedianComputer:
                     buffer.seek(0)
                     blob_name = f"median_{collection.split(':')[-1]}_{minx}_{miny}_{maxx}_{maxy}_{start_date}_{end_date}.tif"
                     
-                    blob = Blob(name=blob_name, data=buffer.getvalue())
-                    blob.save()
+                    blob = Blob(name=blob_name)
+                    blob.upload_data(buffer.getvalue())
                     print(f"    Saved blob: {blob.id}")
                     
                     return {
@@ -291,6 +291,8 @@ class ServerlessMedianComputer:
             
             # Get results
             result = job.result()
+            print(f"DEBUG job.result() type: {type(result)}")
+            print(f"DEBUG job.result() value: {result}")
             logs = job.log() if hasattr(job, 'log') else None
             
             logger.info("Job completed successfully!")

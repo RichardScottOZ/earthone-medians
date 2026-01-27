@@ -109,16 +109,40 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             n_img, n_bands, h, w = data_bands.shape
             
             if median_type == "geometric":
-                import hdmedians as hd
                 # Mask out high-veg and snow observations (weight < 0.3)
                 bad_obs = weights < 0.3
-                data_bands[bad_obs[:, np.newaxis, :, :].repeat(n_bands, axis=1)] = np.nan
+                for b in range(n_bands):
+                    data_bands[bad_obs, b, :, :] = np.nan
                 
                 # Reshape: (images, bands, h, w) -> (h*w, images, bands)
                 data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)
-                # Vectorized geomedian across images (axis=1)
-                result_flat = hd.nangeomedian(data_reshaped, axis=1)  # (h*w, bands)
-                median_result = result_flat.reshape(h, w, n_bands).transpose(2, 0, 1)  # (bands, h, w)
+                
+                # Vectorized Weiszfeld geometric median across all pixels
+                # data_reshaped: (pixels, images, bands)
+                median = np.nanmedian(data_reshaped, axis=1)  # initial guess (pixels, bands)
+                
+                for _ in range(50):  # max iterations
+                    # Compute distances from each observation to current median
+                    diff = data_reshaped - median[:, np.newaxis, :]  # (pixels, images, bands)
+                    dists = np.sqrt(np.nansum(diff ** 2, axis=2))  # (pixels, images)
+                    dists = np.maximum(dists, 1e-10)
+                    
+                    # Weights = 1/distance
+                    w = 1.0 / dists  # (pixels, images)
+                    w = np.where(np.isnan(data_reshaped[:, :, 0]), 0, w)  # zero weight for NaN
+                    
+                    # Weighted average
+                    w_sum = w.sum(axis=1, keepdims=True)  # (pixels, 1)
+                    w_norm = w / np.maximum(w_sum, 1e-10)  # (pixels, images)
+                    new_median = np.nansum(data_reshaped * w_norm[:, :, np.newaxis], axis=1)  # (pixels, bands)
+                    
+                    # Check convergence
+                    if np.nanmax(np.abs(new_median - median)) < 1e-5:
+                        break
+                    median = new_median
+                
+                median_result = median.reshape(h, w, n_bands).transpose(2, 0, 1)
+                median_result = np.nan_to_num(median_result, 0)
             else:
                 # Basic: weighted mean approximation
                 data_bands = np.ma.array(data_bands, mask=np.isnan(data_bands))
@@ -174,7 +198,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         timeout=3600,
         maximum_concurrency=max_concurrent,
         retry_count=retries,
-        requirements=["earthdaily-earthone>=5.0.0", "numpy<2", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
+        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0"]
     )
     
     job = func(

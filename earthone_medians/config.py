@@ -1,17 +1,17 @@
 """Configuration for satellite sensors and their bands."""
 
-# Sentinel-2 useful science bands (excluding coastal aerosol B1)
+# Sentinel-2 useful science bands (EarthOne naming)
 SENTINEL2_BANDS = {
-    "B2": {"name": "Blue", "resolution": 10, "wavelength": "490 nm"},
-    "B3": {"name": "Green", "resolution": 10, "wavelength": "560 nm"},
-    "B4": {"name": "Red", "resolution": 10, "wavelength": "665 nm"},
-    "B5": {"name": "Red Edge 1", "resolution": 20, "wavelength": "705 nm"},
-    "B6": {"name": "Red Edge 2", "resolution": 20, "wavelength": "740 nm"},
-    "B7": {"name": "Red Edge 3", "resolution": 20, "wavelength": "783 nm"},
-    "B8": {"name": "NIR", "resolution": 10, "wavelength": "842 nm"},
-    "B8A": {"name": "Red Edge 4", "resolution": 20, "wavelength": "865 nm"},
-    "B11": {"name": "SWIR 1", "resolution": 20, "wavelength": "1610 nm"},
-    "B12": {"name": "SWIR 2", "resolution": 20, "wavelength": "2190 nm"},
+    "blue": {"name": "Blue", "resolution": 10, "wavelength": "490 nm"},
+    "green": {"name": "Green", "resolution": 10, "wavelength": "560 nm"},
+    "red": {"name": "Red", "resolution": 10, "wavelength": "665 nm"},
+    "red-edge": {"name": "Red Edge 1", "resolution": 20, "wavelength": "705 nm"},
+    "red-edge-2": {"name": "Red Edge 2", "resolution": 20, "wavelength": "740 nm"},
+    "red-edge-3": {"name": "Red Edge 3", "resolution": 20, "wavelength": "783 nm"},
+    "nir": {"name": "NIR", "resolution": 10, "wavelength": "842 nm"},
+    "red-edge-4": {"name": "Red Edge 4", "resolution": 20, "wavelength": "865 nm"},
+    "swir1": {"name": "SWIR 1", "resolution": 20, "wavelength": "1610 nm"},
+    "swir2": {"name": "SWIR 2", "resolution": 20, "wavelength": "2190 nm"},
 }
 
 # Landsat useful science bands (excluding coastal aerosol)

@@ -110,6 +110,9 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                 # Mask out high-veg and snow observations (weight < 0.3)
                 bad_obs = weights < 0.3
                 data_bands[bad_obs[:, np.newaxis, :, :].repeat(n_bands, axis=1)] = np.nan
+                bad_obs = weights < 0.3  # (images, h, w)
+                bad_obs_expanded = bad_obs[:, np.newaxis, :, :]  # (images, 1, h, w)
+                data_bands = np.where(bad_obs_expanded, np.nan, data_bands)
                 
                 # Reshape: (images, bands, h, w) -> (h*w, images, bands)
                 data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)
@@ -181,7 +184,10 @@ def poll_job(job, tile_id, timeout=3600):
     """Poll job until complete."""
     start = time.time()
     while time.time() - start < timeout:
-        job.refresh()
+        try:
+            job.refresh()
+        except Exception as e:
+            return {"status": "error", "error": f"Job polling failed: {e}"}
         elapsed = int(time.time() - start)
         print(f"  [{elapsed}s] {tile_id}: {job.status}")
         if job.status == "success":
@@ -243,7 +249,24 @@ def main():
     if args.resume and progress_file.exists():
         with open(progress_file) as f:
             completed = json.load(f)
-        print(f"Resuming: {len(completed)} tiles already done")
+        print(f"Resuming: {len(completed)} tiles in progress file")
+        
+        # If download enabled, check for missing local files and re-download
+        if args.download and not args.s3_bucket:
+            for tile_id, info in completed.items():
+                if info.get("status") == "success" and info.get("blob_id") and not info.get("local_path"):
+                    local_path = output_dir / f"{tile_id}.tif"
+                    if not local_path.exists():
+                        print(f"  Downloading missing {tile_id}...")
+                        try:
+                            from earthdaily.earthone.catalog import Blob
+                            blob = Blob.get(id=info["blob_id"])
+                            data = blob.get_data(id=info["blob_id"])
+                            with open(local_path, 'wb') as f:
+                                f.write(data)
+                            completed[tile_id]["local_path"] = str(local_path)
+                        except Exception as e:
+                            print(f"    Failed: {e}")
 
     # Filter out completed tiles
     pending_tiles = [(f"tile_{i:04d}", tile) for i, tile in enumerate(tiles) 

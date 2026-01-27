@@ -86,16 +86,16 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             # Compute NDVI weights (favor low vegetation)
             nir_idx = stack_bands.index("nir")
             red_idx = stack_bands.index("red")
-            nir = data[:, nir_idx].astype(float)
-            red = data[:, red_idx].astype(float)
+            nir = data[:, nir_idx].astype(np.float32)
+            red = data[:, red_idx].astype(np.float32)
             ndvi = (nir - red) / (nir + red + 1e-10)
             weights = np.clip(1.0 - ndvi, 0.1, 1.0)
             
             # Compute NDSI for snow exclusion (favor non-snow)
             green_idx = stack_bands.index("green")
             swir1_idx = stack_bands.index("swir1")
-            green = data[:, green_idx].astype(float)
-            swir1 = data[:, swir1_idx].astype(float)
+            green = data[:, green_idx].astype(np.float32)
+            swir1 = data[:, swir1_idx].astype(np.float32)
             ndsi = (green - swir1) / (green + swir1 + 1e-10)
             snow_weight = np.where(ndsi > 0.4, 0.1, 1.0)  # Penalize snow
             weights = weights * snow_weight

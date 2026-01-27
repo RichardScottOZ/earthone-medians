@@ -43,14 +43,14 @@ def generate_tiles(bbox, tile_size=0.5):
         y += tile_size
     return tiles
 
-def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries, median_type, overlap):
+def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memory, cpus, cloud_max, max_concurrent, retries, median_type):
     """Submit a single tile job and return job object."""
     minx, miny, maxx, maxy = tile
     bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
     resolution_deg = resolution / 111000.0
     
     def compute_bare_earth_tile(
-        bbox, start_date, end_date, bands, resolution, cloud_max, median_type, overlap, crs="EPSG:4326"
+        bbox, start_date, end_date, bands, resolution, cloud_max, median_type, crs="EPSG:4326"
     ):
         import numpy as np
         import io
@@ -63,19 +63,16 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         
         try:
             minx, miny, maxx, maxy = bbox
-            # Expand bbox by overlap for processing, clip back later
-            buf_minx, buf_miny = minx - overlap, miny - overlap
-            buf_maxx, buf_maxy = maxx + overlap, maxy + overlap
-            buffered_geom = box(buf_minx, buf_miny, buf_maxx, buf_maxy).__geo_interface__
+            bbox_geom = box(minx, miny, maxx, maxy).__geo_interface__
             resolution_deg = resolution / 111000.0
-            aoi = AOI(geometry=buffered_geom, crs=crs, resolution=resolution_deg)
+            aoi = AOI(geometry=bbox_geom, crs=crs, resolution=resolution_deg)
             
             product = Product.get("esa:sentinel-2:l2a:v1")
             search = (product.images()
                 .filter(p.acquired >= start_date)
                 .filter(p.acquired < end_date)
                 .filter(p.cloud_fraction <= cloud_max)
-                .intersects(buffered_geom))
+                .intersects(bbox_geom))
             images = search.collect()
             
             if len(images) == 0:
@@ -109,40 +106,16 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             n_img, n_bands, h, w = data_bands.shape
             
             if median_type == "geometric":
+                import hdmedians as hd
                 # Mask out high-veg and snow observations (weight < 0.3)
                 bad_obs = weights < 0.3
-                for b in range(n_bands):
-                    data_bands[bad_obs, b, :, :] = np.nan
+                data_bands[bad_obs[:, np.newaxis, :, :].repeat(n_bands, axis=1)] = np.nan
                 
                 # Reshape: (images, bands, h, w) -> (h*w, images, bands)
                 data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)
-                
-                # Vectorized Weiszfeld geometric median across all pixels
-                # data_reshaped: (pixels, images, bands)
-                median = np.nanmedian(data_reshaped, axis=1)  # initial guess (pixels, bands)
-                
-                for _ in range(50):  # max iterations
-                    # Compute distances from each observation to current median
-                    diff = data_reshaped - median[:, np.newaxis, :]  # (pixels, images, bands)
-                    dists = np.sqrt(np.nansum(diff ** 2, axis=2))  # (pixels, images)
-                    dists = np.maximum(dists, 1e-10)
-                    
-                    # Weights = 1/distance
-                    w = 1.0 / dists  # (pixels, images)
-                    w = np.where(np.isnan(data_reshaped[:, :, 0]), 0, w)  # zero weight for NaN
-                    
-                    # Weighted average
-                    w_sum = w.sum(axis=1, keepdims=True)  # (pixels, 1)
-                    w_norm = w / np.maximum(w_sum, 1e-10)  # (pixels, images)
-                    new_median = np.nansum(data_reshaped * w_norm[:, :, np.newaxis], axis=1)  # (pixels, bands)
-                    
-                    # Check convergence
-                    if np.nanmax(np.abs(new_median - median)) < 1e-5:
-                        break
-                    median = new_median
-                
-                median_result = median.reshape(h, w, n_bands).transpose(2, 0, 1)
-                median_result = np.nan_to_num(median_result, 0)
+                # Vectorized geomedian across images (axis=1)
+                result_flat = hd.nangeomedian(data_reshaped, axis=1)  # (h*w, bands)
+                median_result = result_flat.reshape(h, w, n_bands).transpose(2, 0, 1)  # (bands, h, w)
             else:
                 # Basic: weighted mean approximation
                 data_bands = np.ma.array(data_bands, mask=np.isnan(data_bands))
@@ -150,14 +123,6 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                 weighted_sum = np.ma.sum(data_bands * weights_expanded, axis=0)
                 weight_sum = np.ma.sum(weights_expanded * ~data_bands.mask, axis=0)
                 median_result = (weighted_sum / (weight_sum + 1e-10)).filled(0)
-            
-            # Clip back to original bbox if overlap was used
-            if overlap > 0:
-                full_h, full_w = median_result.shape[-2:]
-                # Calculate pixel offsets for clipping
-                px_overlap_x = int(overlap / resolution_deg)
-                px_overlap_y = int(overlap / resolution_deg)
-                median_result = median_result[:, px_overlap_y:full_h-px_overlap_y, px_overlap_x:full_w-px_overlap_x]
             
             # Save GeoTIFF
             num_bands = median_result.shape[0]
@@ -198,7 +163,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         timeout=3600,
         maximum_concurrency=max_concurrent,
         retry_count=retries,
-        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0"]
+        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
     )
     
     job = func(
@@ -208,8 +173,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         bands=bands,
         resolution=resolution,
         cloud_max=cloud_max,
-        median_type=median_type,
-        overlap=overlap
+        median_type=median_type
     )
     return job, tile_id, tile
 
@@ -242,7 +206,6 @@ def main():
     parser.add_argument("--start", default="2019-01-01", help="Start date")
     parser.add_argument("--end", default="2024-01-01", help="End date")
     parser.add_argument("--tile-size", type=float, default=0.1, help="Tile size in degrees")
-    parser.add_argument("--overlap", type=float, default=0.0, help="Tile overlap/buffer in degrees (e.g., 0.01)")
     parser.add_argument("--max-concurrent", type=int, default=10, help="Max concurrent jobs")
     parser.add_argument("--memory", type=int, default=16384, help="Memory per job (MB)")
     parser.add_argument("--cpus", type=float, default=4.0, help="CPUs per job")
@@ -301,7 +264,7 @@ def main():
             try:
                 tile_id, tile = next(tile_iter)
                 job, tid, t = submit_tile_job(tile_id, tile, args.start, args.end, 
-                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type, args.overlap)
+                    BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
                 future = executor.submit(poll_job, job, tid)
                 futures[future] = (tid, t, job.id)
                 print(f"Submitted {tid}: {t}")
@@ -361,7 +324,7 @@ def main():
                 try:
                     next_tile_id, next_tile = next(tile_iter)
                     job, tid, t = submit_tile_job(next_tile_id, next_tile, args.start, args.end,
-                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type, args.overlap)
+                        BARE_EARTH_BANDS, args.resolution, args.memory, args.cpus, args.cloud, args.max_concurrent, args.retries, args.median_type)
                     new_future = executor.submit(poll_job, job, tid)
                     futures[new_future] = (tid, t, job.id)
                     print(f"Submitted {tid}: {t}")

@@ -275,7 +275,6 @@ class ServerlessMedianComputer:
             
             logger.info(f"Job submitted successfully!")
             logger.info(f"  Job ID: {job.id}")
-            logger.info(f"  Status: {job.status}")
             
             # Poll for completion with progress updates
             import time
@@ -284,16 +283,18 @@ class ServerlessMedianComputer:
             timeout = 3600
             
             while elapsed < timeout:
+                job.refresh()  # Get latest status from server
                 status = job.status
                 logger.info(f"  [{elapsed}s] Job status: {status}")
                 
-                if status in ("SUCCEEDED", "SUCCESS", "COMPLETED"):
+                if status in ("success", "succeeded", "completed"):
                     break
-                elif status in ("FAILED", "ERROR", "CANCELLED"):
+                elif status in ("failure", "failed", "error", "cancelled"):
                     logger.error(f"Job failed with status: {status}")
+                    logger.error(f"  Error: {job.error_reason}")
                     return {
                         "status": "error",
-                        "error": f"Job failed: {status}",
+                        "error": f"Job failed: {job.error_reason}",
                         "job_id": job.id,
                         "logs": job.log() if hasattr(job, 'log') else None,
                     }

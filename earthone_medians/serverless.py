@@ -517,7 +517,7 @@ def retrieve_blob_result(blob_id: str, output_path: Optional[str] = None):
     blob = Blob.get(id=blob_id)
     if blob is None:
         raise ValueError(f"Blob not found: {blob_id}")
-    data = blob.get_data()
+    data = blob.get_data(id=blob_id)
     
     if output_path:
         with open(output_path, 'wb') as f:

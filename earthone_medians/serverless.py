@@ -174,73 +174,45 @@ class ServerlessMedianComputer:
                     median_result = np.ma.median(stack, axis=0).filled(0)
                     print(f"    Median shape: {median_result.shape}")
                     
-                    # DEBUG: Return early to test if compute works (skip GeoTIFF/Blob)
-                    return {"debug": "COMPUTE_ONLY_TEST", "num_images": num_images, "shape": list(median_result.shape), "dtype": str(median_result.dtype)}
+                    # DEBUG disabled - proceed to GeoTIFF/Blob
+                    # return {"debug": "COMPUTE_ONLY_TEST", "num_images": num_images, "shape": list(median_result.shape), "dtype": str(median_result.dtype)}
+                    
+                    print("[6/6] Saving GeoTIFF to blob storage...")
+                    num_bands = median_result.shape[0] if median_result.ndim == 3 else 1
+                    height = median_result.shape[-2]
+                    width = median_result.shape[-1]
+                    transform = from_bounds(minx, miny, maxx, maxy, width, height)
+                    
+                    buffer = io.BytesIO()
+                    with rasterio.open(
+                        buffer, 'w', driver='GTiff',
+                        height=height, width=width, count=num_bands,
+                        dtype=str(median_result.dtype), crs=crs, transform=transform,
+                        compress='lzw',
+                    ) as dst:
+                        if median_result.ndim == 3:
+                            for i in range(num_bands):
+                                dst.write(median_result[i], i + 1)
+                        else:
+                            dst.write(median_result, 1)
+                    
+                    buffer.seek(0)
+                    blob_name = f"median_{collection.split(':')[-1]}_{minx}_{miny}_{maxx}_{maxy}_{start_date}_{end_date}.tif"
+                    
+                    blob = Blob(name=blob_name, data=buffer.getvalue())
+                    blob.save()
+                    print(f"    Saved blob: {blob.id}")
+                    
+                    return {
+                        "success": True,
+                        "blob_id": blob.id,
+                        "blob_name": blob_name,
+                        "num_images": num_images,
+                        "shape": list(median_result.shape),
+                    }
                     
                 except Exception as e:
                     return {"error": str(e), "traceback": traceback.format_exc()}
-                
-                # Save as GeoTIFF (unreachable while debug is enabled)
-                num_bands = median_result.shape[0] if median_result.ndim == 3 else 1
-                height = median_result.shape[-2]
-                width = median_result.shape[-1]
-                transform = from_bounds(minx, miny, maxx, maxy, width, height)
-                
-                buffer = io.BytesIO()
-                with rasterio.open(
-                    buffer, 'w', driver='GTiff',
-                    height=height, width=width, count=num_bands,
-                    dtype=median_result.dtype, crs=crs, transform=transform,
-                    compress='lzw',
-                ) as dst:
-                    if median_result.ndim == 3:
-                        for i in range(num_bands):
-                            dst.write(median_result[i], i + 1)
-                            dst.set_band_description(i + 1, bands[i] if i < len(bands) else f"band_{i+1}")
-                    else:
-                        dst.write(median_result, 1)
-                
-                buffer.seek(0)
-                
-                # Build descriptive blob name
-                blob_name = f"median_{collection.split(':')[-1]}_{minx}_{miny}_{maxx}_{maxy}_{start_date}_{end_date}.tif"
-                
-                blob = Blob(
-                    name=blob_name,
-                    data=buffer.getvalue(),
-                    attributes={
-                        "type": "median_composite",
-                        "format": "GeoTIFF",
-                        "collection": collection,
-                        "bands": bands,
-                        "bbox": bbox,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "resolution": resolution,
-                        "crs": crs,
-                        "num_images": num_images,
-                        "shape": list(median_result.shape),
-                        "dtype": str(median_result.dtype),
-                        "created_at": datetime.utcnow().isoformat(),
-                    }
-                )
-                blob.save()
-                
-                # Return reference to stored blob (small payload)
-                return Result(
-                    data={
-                        "success": True,
-                        "blob_id": blob.id,
-                        "blob_name": blob.name,
-                        "num_images": num_images,
-                        "shape": list(median_result.shape),
-                        "dtype": str(median_result.dtype),
-                    },
-                    attributes={
-                        "job_name": job_name,
-                        "collection": collection,
-                    }
-                )
             
             # Create and register the Function
             logger.info("Creating serverless compute function...")

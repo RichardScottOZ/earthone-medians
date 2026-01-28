@@ -106,7 +106,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             # Keep only requested bands for median
             band_indices = [stack_bands.index(b) for b in bands]
             data_bands = data[:, band_indices, :, :].filled(np.nan)
-            n_img, n_bands, h, w = data_bands.shape
+            n_img, n_bands, h, w = [int(x) for x in data_bands.shape]
             
             if median_type == "geometric":
                 # Mask out high-veg and snow observations (weight < 0.3)
@@ -194,7 +194,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
     
     func = Function(
         compute_bare_earth_tile,
-        name=f"bare-earth-{tile_id}",
+        name=f"bare-earth-v3-{tile_id}",
         image="python3.10:latest",
         cpus=cpus,
         memory=memory,

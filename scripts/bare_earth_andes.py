@@ -110,9 +110,9 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             
             if median_type == "geometric":
                 # Mask out high-veg and snow observations (weight < 0.3)
-                bad_obs = weights < 0.3
-                for b in range(n_bands):
-                    data_bands[bad_obs, b, :, :] = np.nan
+                bad_obs = weights < 0.3  # (images, h, w)
+                bad_obs_expanded = bad_obs[:, np.newaxis, :, :]  # (images, 1, h, w)
+                data_bands = np.where(bad_obs_expanded, np.nan, data_bands)
                 
                 # Reshape: (images, bands, h, w) -> (h*w, images, bands)
                 data_reshaped = data_bands.transpose(2, 3, 0, 1).reshape(h * w, n_img, n_bands)

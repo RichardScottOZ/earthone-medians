@@ -155,13 +155,16 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
             if overlap > 0:
                 full_h, full_w = median_result.shape[-2:]
                 # Calculate pixel offsets for clipping
-                px_overlap_x = int(overlap / resolution_deg)
-                px_overlap_y = int(overlap / resolution_deg)
-                median_result = median_result[:, px_overlap_y:full_h-px_overlap_y, px_overlap_x:full_w-px_overlap_x]
+                px_overlap_x = int(round(overlap / resolution_deg))
+                px_overlap_y = int(round(overlap / resolution_deg))
+                y_start, y_end = px_overlap_y, full_h - px_overlap_y
+                x_start, x_end = px_overlap_x, full_w - px_overlap_x
+                median_result = median_result[:, y_start:y_end, x_start:x_end]
             
             # Save GeoTIFF
             num_bands = median_result.shape[0]
-            height, width = median_result.shape[-2:]
+            height = int(median_result.shape[-2])
+            width = int(median_result.shape[-1])
             transform = from_bounds(minx, miny, maxx, maxy, width, height)
             
             buffer = io.BytesIO()

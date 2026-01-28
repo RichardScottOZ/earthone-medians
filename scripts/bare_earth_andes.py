@@ -166,7 +166,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
         timeout=3600,
         maximum_concurrency=max_concurrent,
         retry_count=retries,
-        requirements=["earthdaily-earthone>=5.0.0", "numpy>=2.0.0", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
+        requirements=["earthdaily-earthone>=5.0.0", "numpy<2", "shapely>=2.0.0", "rasterio>=1.3.0", "hdmedians>=0.14"]
     )
     
     job = func(

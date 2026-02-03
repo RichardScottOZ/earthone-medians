@@ -159,9 +159,13 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                 # Calculate pixel offsets for clipping
                 px_overlap_x = int(round(overlap / resolution_deg))
                 px_overlap_y = int(round(overlap / resolution_deg))
-                y_start, y_end = px_overlap_y, full_h - px_overlap_y
-                x_start, x_end = px_overlap_x, full_w - px_overlap_x
-                median_result = median_result[:, y_start:y_end, x_start:x_end]
+                # Safety check - don't clip more than available
+                px_overlap_x = min(px_overlap_x, full_w // 4)
+                px_overlap_y = min(px_overlap_y, full_h // 4)
+                if px_overlap_x > 0 and px_overlap_y > 0:
+                    y_start, y_end = px_overlap_y, full_h - px_overlap_y
+                    x_start, x_end = px_overlap_x, full_w - px_overlap_x
+                    median_result = median_result[:, y_start:y_end, x_start:x_end]
             
             # Save GeoTIFF
             num_bands = median_result.shape[0]
@@ -179,7 +183,7 @@ def submit_tile_job(tile_id, tile, start_date, end_date, bands, resolution, memo
                     dst.set_band_description(i + 1, bands[i])
             
             buffer.seek(0)
-            blob_name = f"bare_earth{'_geomedian' if median_type == 'geometric' else ''}_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"
+            blob_name = f"bare_earth{'_geomedian' if median_type == 'geometric' else ''}_{resolution}m_{minx:.2f}_{miny:.2f}_{maxx:.2f}_{maxy:.2f}_{start_date}_{end_date}.tif"
             blob = Blob(name=blob_name)
             blob.upload_data(buffer.getvalue())
             
@@ -259,13 +263,19 @@ def main():
     parser.add_argument("--s3-bucket", help="S3 bucket for output (optional, e.g. s3://my-bucket/bare-earth/)")
     parser.add_argument("--download", action="store_true", help="Download tiles as they complete")
     parser.add_argument("--resume", action="store_true", help="Resume from progress file")
+    parser.add_argument("--retry-failed", action="store_true", help="Retry failed tiles when resuming")
     parser.add_argument("--dry-run", action="store_true", help="Show tiles without running")
     parser.add_argument("--test", action="store_true", help="Use small test AOI instead of full Andes")
+    parser.add_argument("--bbox", type=str, help="Custom bbox: minx,miny,maxx,maxy (e.g. -71.75,-37.75,-69,-32.75)")
     parser.add_argument("--limit", type=int, help="Limit number of tiles to process")
     args = parser.parse_args()
 
-    bbox = TEST_BBOX if args.test else ANDES_BBOX
-    args = parser.parse_args()
+    if args.bbox:
+        bbox = [float(x) for x in args.bbox.split(",")]
+    elif args.test:
+        bbox = TEST_BBOX
+    else:
+        bbox = ANDES_BBOX
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -285,11 +295,18 @@ def main():
     if args.resume and progress_file.exists():
         with open(progress_file) as f:
             completed = json.load(f)
-        print(f"Resuming: {len(completed)} tiles already done")
+        print(f"Resuming: {len(completed)} tiles in progress file")
 
-    # Filter out completed tiles
+    # Filter out completed tiles (keep failed ones if --retry-failed)
+    def should_skip(tile_id):
+        if tile_id not in completed:
+            return False
+        if args.retry_failed and completed[tile_id].get("status") != "success":
+            return False
+        return True
+    
     pending_tiles = [(f"tile_{i:04d}", tile) for i, tile in enumerate(tiles) 
-                     if f"tile_{i:04d}" not in completed]
+                     if not should_skip(f"tile_{i:04d}")]
     if args.limit:
         pending_tiles = pending_tiles[:args.limit]
     print(f"Tiles to process: {len(pending_tiles)}")
@@ -358,9 +375,17 @@ def main():
                 else:
                     print(f"✗ {tile_id}: {status} - {result.get('error', '')[:50]}")
                 
-                # Save progress
-                with open(progress_file, "w") as f:
-                    json.dump(completed, f, indent=2)
+                # Save progress (with retry for file lock)
+                for attempt in range(3):
+                    try:
+                        with open(progress_file, "w") as f:
+                            json.dump(completed, f, indent=2)
+                        break
+                    except PermissionError:
+                        if attempt < 2:
+                            time.sleep(1)
+                        else:
+                            print(f"  ⚠ Could not save progress (file locked)")
                 
                 # Submit next tile
                 try:
